@@ -1,0 +1,24 @@
+<script>
+(() => {
+  function updateLocalStorageCopy() {
+    const help = document.querySelector('.book-editor-help');
+    if (help) {
+      help.textContent = 'ExcelやGoogleスプレッドシートから複数セルを貼り付けできます。Saveすると、この端末のStudy Shortsデータベースへ保存されます。';
+    }
+
+    const subtitle = document.querySelector('.launch-subtitle');
+    if (subtitle) subtitle.textContent = 'Books are stored on this device.';
+
+    const status = document.getElementById('bookEditorStatus');
+    if (status) {
+      const rewrite = () => {
+        if (status.textContent === 'Loaded from Google Sheets') status.textContent = 'Loaded from this device';
+      };
+      rewrite();
+      new MutationObserver(rewrite).observe(status, { childList: true, characterData: true, subtree: true });
+    }
+  }
+
+  window.addEventListener('DOMContentLoaded', updateLocalStorageCopy, { once: true });
+})();
+</script>
