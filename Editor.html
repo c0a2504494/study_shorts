@@ -1,0 +1,321 @@
+<style>
+  .book-editor {
+    position: fixed;
+    inset: 0;
+    z-index: 140;
+    display: none;
+    grid-template-rows: auto 1fr auto;
+    background: #0b0d10;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .book-editor.visible { display: grid; }
+  .book-editor-header,
+  .book-editor-footer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    background: #111419;
+  }
+  .book-editor-header {
+    padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
+    border-bottom: 1px solid rgb(255 255 255 / 12%);
+  }
+  .book-editor-footer {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+    border-top: 1px solid rgb(255 255 255 / 12%);
+  }
+  .book-editor-title { flex: 1; min-width: 0; }
+  .book-editor-title strong,
+  .book-editor-title span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .book-editor-title span { margin-top: 3px; color: rgb(255 255 255 / 56%); font-size: 12px; }
+  .book-editor-button {
+    min-height: 42px;
+    padding: 0 14px;
+    border: 1px solid rgb(255 255 255 / 16%);
+    border-radius: 10px;
+    background: rgb(255 255 255 / 8%);
+    color: #fff;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 850;
+  }
+  .book-editor-button.primary { background: #fff; color: #08090b; }
+  .book-editor-button:disabled { opacity: .4; }
+  .book-editor-body { min-height: 0; overflow: auto; overscroll-behavior: contain; }
+  .book-grid {
+    width: max-content;
+    min-width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+  }
+  .book-grid th,
+  .book-grid td {
+    min-width: 150px;
+    height: 42px;
+    padding: 8px 10px;
+    border-right: 1px solid #30343b;
+    border-bottom: 1px solid #30343b;
+    background: #15181d;
+    text-align: left;
+    vertical-align: top;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: 13px;
+    line-height: 1.35;
+  }
+  .book-grid th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #22262d;
+    color: rgb(255 255 255 / 74%);
+    font-size: 11px;
+    font-weight: 900;
+  }
+  .book-grid .row-number {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    min-width: 48px;
+    width: 48px;
+    background: #22262d;
+    color: rgb(255 255 255 / 48%);
+    text-align: center;
+    user-select: none;
+  }
+  .book-grid th.row-number { z-index: 3; }
+  .book-grid td[contenteditable="true"]:focus {
+    outline: 2px solid #67e8f9;
+    outline-offset: -2px;
+    background: #19242a;
+  }
+  .book-editor-help {
+    padding: 10px 14px;
+    border-bottom: 1px solid rgb(255 255 255 / 10%);
+    background: #0f1216;
+    color: rgb(255 255 255 / 58%);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .book-editor-status { flex: 1; min-width: 0; color: rgb(255 255 255 / 62%); font-size: 12px; }
+  .launch-edit {
+    width: 100%;
+    min-height: 50px;
+    border: 1px solid rgb(255 255 255 / 18%);
+    border-radius: 14px;
+    background: rgb(255 255 255 / 8%);
+    color: #fff;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 900;
+  }
+</style>
+
+<section class="book-editor" id="bookEditor" aria-hidden="true" aria-label="Edit book">
+  <header class="book-editor-header">
+    <button class="book-editor-button" id="bookEditorClose" type="button">Close</button>
+    <div class="book-editor-title">
+      <strong id="bookEditorName">Book editor</strong>
+      <span>Spreadsheet paste supported</span>
+    </div>
+    <button class="book-editor-button" id="bookEditorAddRow" type="button">+ Row</button>
+  </header>
+  <div class="book-editor-body">
+    <div class="book-editor-help">Excel・Googleスプレッドシートから複数セルをコピーし、左上のセルへ貼り付けできます。端末内には下書きを自動保存し、「Save」でGoogleスプレッドシートへ同期します。</div>
+    <table class="book-grid" id="bookGrid">
+      <thead><tr><th class="row-number">#</th><th>Question</th><th>Answer</th><th>Count</th><th>Rank</th><th>Comment 1</th><th>Comment 2</th><th>Comment 3</th></tr></thead>
+      <tbody id="bookGridBody"></tbody>
+    </table>
+  </div>
+  <footer class="book-editor-footer">
+    <span class="book-editor-status" id="bookEditorStatus">Not loaded</span>
+    <button class="book-editor-button" id="bookEditorCopy" type="button">Copy TSV</button>
+    <button class="book-editor-button primary" id="bookEditorSave" type="button">Save</button>
+  </footer>
+</section>
+
+<script>
+  (() => {
+    const COLUMN_COUNT = 7;
+    const MIN_ROWS = 20;
+    const DRAFT_PREFIX = 'study-shorts-book-document-v1:';
+    let activeBook = '';
+    let saveTimer = 0;
+
+    const editor = document.getElementById('bookEditor');
+    const body = document.getElementById('bookGridBody');
+    const nameLabel = document.getElementById('bookEditorName');
+    const status = document.getElementById('bookEditorStatus');
+    const saveButton = document.getElementById('bookEditorSave');
+
+    function draftKey(name) { return `${DRAFT_PREFIX}${name}`; }
+    function emptyRow() { return Array(COLUMN_COUNT).fill(''); }
+
+    function normalizeRows(rows) {
+      const normalized = (Array.isArray(rows) ? rows : []).map((row) =>
+        Array.from({ length: COLUMN_COUNT }, (_, index) => String(row?.[index] ?? ''))
+      );
+      while (normalized.length < MIN_ROWS) normalized.push(emptyRow());
+      return normalized;
+    }
+
+    function renderRows(rows) {
+      body.replaceChildren();
+      normalizeRows(rows).forEach((row, rowIndex) => {
+        const tr = document.createElement('tr');
+        const number = document.createElement('td');
+        number.className = 'row-number';
+        number.textContent = String(rowIndex + 1);
+        tr.appendChild(number);
+        row.forEach((value, columnIndex) => {
+          const cell = document.createElement('td');
+          cell.contentEditable = 'true';
+          cell.dataset.row = String(rowIndex);
+          cell.dataset.column = String(columnIndex);
+          cell.textContent = value;
+          tr.appendChild(cell);
+        });
+        body.appendChild(tr);
+      });
+    }
+
+    function rowsFromGrid() {
+      return [...body.rows]
+        .map((row) => [...row.cells].slice(1).map((cell) => cell.textContent.replace(/\r\n?/g, '\n')))
+        .filter((row) => row.some((value) => value.trim()));
+    }
+
+    function saveDraft() {
+      if (!activeBook) return;
+      const document = { schemaVersion: 1, name: activeBook, rows: rowsFromGrid(), storage: 'device-draft', updatedAt: new Date().toISOString() };
+      try {
+        localStorage.setItem(draftKey(activeBook), JSON.stringify(document));
+        status.textContent = 'Draft saved on this device';
+      } catch (error) {
+        status.textContent = 'Could not save local draft';
+      }
+    }
+
+    function scheduleDraftSave() {
+      window.clearTimeout(saveTimer);
+      saveTimer = window.setTimeout(saveDraft, 300);
+    }
+
+    function localDraft(name) {
+      try { return JSON.parse(localStorage.getItem(draftKey(name)) || 'null'); }
+      catch (error) { return null; }
+    }
+
+    function openEditor(name) {
+      activeBook = String(name || '').trim();
+      if (!activeBook) return;
+      nameLabel.textContent = activeBook;
+      editor.classList.add('visible');
+      editor.setAttribute('aria-hidden', 'false');
+      status.textContent = 'Loading…';
+
+      const draft = localDraft(activeBook);
+      if (draft?.rows) {
+        renderRows(draft.rows);
+        status.textContent = 'Device draft loaded';
+      } else {
+        renderRows([]);
+      }
+
+      if (!window.google?.script?.run) return;
+      google.script.run
+        .withSuccessHandler((document) => {
+          if (!localDraft(activeBook)) renderRows(document?.rows || []);
+          status.textContent = localDraft(activeBook) ? 'Device draft loaded' : 'Loaded from Google Sheets';
+        })
+        .withFailureHandler(() => { status.textContent = 'Could not load book'; })
+        .getBookDocument(activeBook);
+    }
+
+    function closeEditor() {
+      saveDraft();
+      editor.classList.remove('visible');
+      editor.setAttribute('aria-hidden', 'true');
+    }
+
+    function saveDocument() {
+      if (!activeBook || !window.google?.script?.run) {
+        saveDraft();
+        return;
+      }
+      saveButton.disabled = true;
+      status.textContent = 'Saving…';
+      const document = { schemaVersion: 1, name: activeBook, rows: rowsFromGrid() };
+      google.script.run
+        .withSuccessHandler((result) => {
+          try { localStorage.removeItem(draftKey(activeBook)); } catch (error) {}
+          status.textContent = `Saved ${result?.rowCount ?? document.rows.length} rows`;
+          saveButton.disabled = false;
+          if (typeof loadItems === 'function') loadItems(activeBook);
+        })
+        .withFailureHandler((error) => {
+          saveDraft();
+          status.textContent = error?.message || 'Save failed. Draft kept on this device.';
+          saveButton.disabled = false;
+        })
+        .saveBookDocument(document);
+    }
+
+    function addRow() {
+      const rows = rowsFromGrid();
+      rows.push(emptyRow());
+      renderRows(rows);
+      body.lastElementChild?.cells?.[1]?.focus();
+      scheduleDraftSave();
+    }
+
+    function pasteGrid(event) {
+      const target = event.target.closest('td[contenteditable="true"]');
+      const text = event.clipboardData?.getData('text/plain') || '';
+      if (!target || (!text.includes('\t') && !text.includes('\n'))) return;
+      event.preventDefault();
+      const matrix = text.replace(/\r\n?/g, '\n').replace(/\n$/, '').split('\n').map((line) => line.split('\t'));
+      const startRow = Number(target.dataset.row);
+      const startColumn = Number(target.dataset.column);
+      const rows = normalizeRows(rowsFromGrid());
+      const requiredRows = startRow + matrix.length;
+      while (rows.length < requiredRows) rows.push(emptyRow());
+      matrix.forEach((values, rowOffset) => values.slice(0, COLUMN_COUNT - startColumn).forEach((value, columnOffset) => {
+        rows[startRow + rowOffset][startColumn + columnOffset] = value;
+      }));
+      renderRows(rows);
+      status.textContent = `Pasted ${matrix.length} rows`;
+      scheduleDraftSave();
+    }
+
+    async function copyTsv() {
+      const text = rowsFromGrid().map((row) => row.join('\t')).join('\n');
+      try { await navigator.clipboard.writeText(text); status.textContent = 'Copied as TSV'; }
+      catch (error) { status.textContent = 'Could not copy'; }
+    }
+
+    function installEditButton() {
+      const actions = document.querySelector('.launch-actions');
+      const select = document.getElementById('launchBookSelect');
+      if (!actions || !select || document.getElementById('launchEdit')) return;
+      const button = document.createElement('button');
+      button.id = 'launchEdit';
+      button.className = 'launch-edit';
+      button.type = 'button';
+      button.textContent = 'Edit selected book';
+      button.addEventListener('click', () => openEditor(select.value));
+      actions.appendChild(button);
+    }
+
+    body.addEventListener('input', scheduleDraftSave);
+    body.addEventListener('paste', pasteGrid);
+    document.getElementById('bookEditorClose').addEventListener('click', closeEditor);
+    document.getElementById('bookEditorAddRow').addEventListener('click', addRow);
+    document.getElementById('bookEditorCopy').addEventListener('click', copyTsv);
+    saveButton.addEventListener('click', saveDocument);
+    window.addEventListener('DOMContentLoaded', installEditButton, { once: true });
+  })();
+</script>
