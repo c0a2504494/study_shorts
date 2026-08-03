@@ -8,5 +8,6 @@ function includeStudyApp() {
   }
 
   const styles = styleMatch ? `<style>${styleMatch[1]}</style>` : '';
-  return `${styles}${bodyMatch[1]}`;
+  const editor = HtmlService.createHtmlOutputFromFile('Editor').getContent();
+  return `${styles}${bodyMatch[1]}${editor}`;
 }
