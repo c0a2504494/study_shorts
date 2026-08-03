@@ -1,7 +1,9 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root = resolve(import.meta.dirname, '..');
+const scriptDirectory = dirname(fileURLToPath(import.meta.url));
+const root = resolve(scriptDirectory, '..');
 const dist = resolve(root, 'dist');
 
 async function read(name) {
@@ -35,7 +37,7 @@ const mobileContent = [
   startGuard,
 ].join('\n');
 
-let output = indexSource
+const output = indexSource
   .replace(/<link rel="preconnect" href="https:\/\/drive\.google\.com">\s*/g, '')
   .replace(/<link rel="preconnect" href="https:\/\/lh3\.googleusercontent\.com">\s*/g, '')
   .replace('user-scalable=no', 'maximum-scale=5')
@@ -58,6 +60,10 @@ if (!output.includes('id="launchStart"')) {
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
 await writeFile(resolve(dist, 'index.html'), output, 'utf8');
-await writeFile(resolve(dist, 'version.json'), JSON.stringify({ version: '0.5.0', runtime: 'capacitor' }, null, 2), 'utf8');
+await writeFile(
+  resolve(dist, 'version.json'),
+  `${JSON.stringify({ version: '0.5.0', runtime: 'capacitor' }, null, 2)}\n`,
+  'utf8',
+);
 
 console.log(`Built ${resolve(dist, 'index.html')}`);
