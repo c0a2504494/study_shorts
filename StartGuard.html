@@ -1,0 +1,56 @@
+<script>
+(() => {
+  'use strict';
+
+  window.addEventListener('DOMContentLoaded', () => {
+    const start = document.getElementById('launchStart');
+    const select = document.getElementById('launchBookSelect');
+    const status = document.getElementById('launchStatus');
+    const screen = document.getElementById('launchScreen');
+
+    if (!start || !select || !status || !screen) return;
+
+    let checking = false;
+
+    start.addEventListener('click', (event) => {
+      if (checking || start.disabled) return;
+
+      const name = String(select.value || '').trim();
+      if (!name || !window.google?.script?.run) return;
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      checking = true;
+      start.disabled = true;
+      start.textContent = 'Checking…';
+      status.textContent = `Checking ${name}…`;
+
+      const finish = () => {
+        checking = false;
+        start.disabled = false;
+        start.textContent = 'Start';
+        screen.setAttribute('aria-busy', 'false');
+      };
+
+      google.script.run
+        .withSuccessHandler((payload) => {
+          const items = Array.isArray(payload?.items) ? payload.items : [];
+          if (items.length === 0) {
+            finish();
+            status.textContent = 'This book is empty. Add cards before starting.';
+            document.getElementById('launchEdit')?.click();
+            return;
+          }
+
+          finish();
+          start.click();
+        })
+        .withFailureHandler((error) => {
+          finish();
+          status.textContent = error?.message || 'Could not open this book. Try again.';
+        })
+        .getStudyItems(name);
+    }, true);
+  }, { once: true });
+})();
+</script>

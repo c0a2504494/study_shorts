@@ -11,5 +11,6 @@ function includeStudyApp() {
   const localStore = HtmlService.createHtmlOutputFromFile('LocalStore').getContent();
   const editor = HtmlService.createHtmlOutputFromFile('Editor').getContent();
   const localUi = HtmlService.createHtmlOutputFromFile('LocalUi').getContent();
-  return `${styles}${localStore}${bodyMatch[1]}${editor}${localUi}`;
+  const startGuard = HtmlService.createHtmlOutputFromFile('StartGuard').getContent();
+  return `${styles}${localStore}${bodyMatch[1]}${editor}${localUi}${startGuard}`;
 }
