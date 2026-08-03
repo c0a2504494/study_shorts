@@ -3,8 +3,12 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+    <meta name="theme-color" content="#08090b">
+    <meta name="color-scheme" content="dark">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="format-detection" content="telephone=no">
     <link rel="preconnect" href="https://drive.google.com">
     <link rel="preconnect" href="https://lh3.googleusercontent.com">
     <title>Study Shorts</title>
@@ -17,6 +21,11 @@
         --safe-left: env(safe-area-inset-left, 0px);
       }
       * { box-sizing: border-box; }
+      button, select { font: inherit; }
+      button:focus-visible, select:focus-visible {
+        outline: 3px solid #67e8f9;
+        outline-offset: 3px;
+      }
       .launch-screen {
         position: fixed;
         inset: 0;
@@ -77,13 +86,13 @@
       }
       .launch-subtitle {
         margin: 0;
-        color: rgb(255 255 255 / 58%);
+        color: rgb(255 255 255 / 66%);
         font-size: 13px;
         font-weight: 700;
       }
       .launch-field { display: grid; gap: 9px; }
       .launch-label {
-        color: rgb(255 255 255 / 72%);
+        color: rgb(255 255 255 / 76%);
         font-size: 12px;
         font-weight: 900;
       }
@@ -95,38 +104,57 @@
         border-radius: 14px;
         background: #1a1c21;
         color: #fff;
-        font: inherit;
-        font-size: 15px;
+        font-size: 16px;
         font-weight: 850;
-        outline: none;
       }
-      .launch-select:focus { border-color: rgb(103 232 249 / 72%); }
-      .launch-start {
+      .launch-actions { display: grid; gap: 10px; margin-top: 14px; }
+      .launch-start, .launch-retry {
         width: 100%;
         min-height: 54px;
-        margin-top: 14px;
         border: 0;
         border-radius: 14px;
-        background: #fff;
-        color: #08090b;
-        font: inherit;
         font-size: 15px;
         font-weight: 950;
+      }
+      .launch-start {
+        background: #fff;
+        color: #08090b;
         box-shadow: 0 14px 32px rgb(0 0 0 / 34%);
       }
-      .launch-start:disabled { opacity: .38; }
+      .launch-retry {
+        border: 1px solid rgb(255 255 255 / 18%);
+        background: rgb(255 255 255 / 8%);
+        color: #fff;
+      }
+      .launch-start:disabled, .launch-retry:disabled { opacity: .4; }
       .launch-status {
         min-height: 18px;
         margin: 11px 0 0;
-        color: rgb(255 255 255 / 54%);
+        color: rgb(255 255 255 / 64%);
         text-align: center;
         font-size: 12px;
         font-weight: 750;
+      }
+      .launch-version {
+        margin: 14px 0 0;
+        color: rgb(255 255 255 / 38%);
+        text-align: center;
+        font-size: 11px;
+        font-weight: 700;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          scroll-behavior: auto !important;
+          animation-duration: .01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: .01ms !important;
+        }
       }
     </style>
     <script>
       (() => {
         const LAST_BOOK_KEY = 'study-shorts-last-book-v1';
+        const DEFAULT_CONFIG = { appName: 'Study Shorts', version: '0.2.0', schemaVersion: 1 };
 
         function savedBookName(names) {
           try {
@@ -141,13 +169,38 @@
           const screen = document.getElementById('launchScreen');
           const select = document.getElementById('launchBookSelect');
           const start = document.getElementById('launchStart');
+          const retry = document.getElementById('launchRetry');
           const status = document.getElementById('launchStatus');
+          const version = document.getElementById('launchVersion');
+          const title = document.getElementById('launchTitle');
           const back = document.getElementById('backButton');
 
-          if (!screen || !select || !start || !status) return;
+          if (!screen || !select || !start || !retry || !status || !version || !title) return;
+
+          let isStarting = false;
+
+          const setBusy = (busy, message) => {
+            select.disabled = busy || select.options.length === 0;
+            start.disabled = busy || !select.value;
+            retry.disabled = busy;
+            start.textContent = busy ? 'Starting…' : 'Start';
+            if (message) status.textContent = message;
+            screen.setAttribute('aria-busy', String(busy));
+          };
+
+          const applyConfig = (rawConfig) => {
+            const config = rawConfig && typeof rawConfig === 'object' ? rawConfig : DEFAULT_CONFIG;
+            const appName = String(config.appName || DEFAULT_CONFIG.appName);
+            const appVersion = String(config.version || DEFAULT_CONFIG.version);
+            title.textContent = appName;
+            document.title = appName;
+            version.textContent = `Version ${appVersion}`;
+          };
 
           const setBooks = (names) => {
-            const books = Array.isArray(names) ? names.filter(Boolean) : [];
+            const books = Array.isArray(names)
+              ? [...new Set(names.map((name) => String(name || '').trim()).filter(Boolean))]
+              : [];
             select.replaceChildren();
 
             if (books.length === 0) {
@@ -157,6 +210,7 @@
               select.appendChild(option);
               select.disabled = true;
               start.disabled = true;
+              retry.hidden = false;
               status.textContent = 'No spreadsheet sheets were found.';
               return;
             }
@@ -171,35 +225,73 @@
             select.value = savedBookName(books);
             select.disabled = false;
             start.disabled = false;
+            retry.hidden = true;
             status.textContent = `${books.length} book${books.length === 1 ? '' : 's'} available`;
           };
 
           const showScreen = () => {
             if (typeof closeAllPanels === 'function') closeAllPanels();
             if (typeof state !== 'undefined') window.clearTimeout(state.autoTimer);
+            isStarting = false;
             screen.hidden = false;
             screen.setAttribute('aria-hidden', 'false');
+            setBusy(false, 'Choose a book to continue.');
+            select.focus({ preventScroll: true });
           };
 
           const startBook = () => {
+            if (isStarting) return;
             const name = String(select.value || '').trim();
             if (!name) {
               status.textContent = 'Choose a book first.';
+              select.focus();
               return;
             }
 
+            isStarting = true;
+            setBusy(true, `Opening ${name}…`);
             try {
               localStorage.setItem(LAST_BOOK_KEY, name);
             } catch (error) {}
 
-            screen.hidden = true;
-            screen.setAttribute('aria-hidden', 'true');
-            if (typeof state !== 'undefined') state.currentSheet = name;
-            if (typeof loadItems === 'function') loadItems(name);
+            window.setTimeout(() => {
+              screen.hidden = true;
+              screen.setAttribute('aria-hidden', 'true');
+              if (typeof state !== 'undefined') state.currentSheet = name;
+              if (typeof loadItems === 'function') loadItems(name);
+              isStarting = false;
+            }, 0);
+          };
+
+          const loadBootstrap = () => {
+            setBusy(true, 'Loading books…');
+            retry.hidden = true;
+
+            if (!window.google || !google.script || !google.script.run) {
+              applyConfig(DEFAULT_CONFIG);
+              setBooks(['Demo', 'TOEIC']);
+              return;
+            }
+
+            google.script.run
+              .withSuccessHandler((payload) => {
+                applyConfig(payload?.config);
+                setBooks(payload?.books);
+              })
+              .withFailureHandler(() => {
+                select.replaceChildren();
+                setBusy(false, 'Could not load books. Check your connection and try again.');
+                select.disabled = true;
+                start.disabled = true;
+                retry.hidden = false;
+              })
+              .getAppBootstrap();
           };
 
           start.addEventListener('click', startBook);
+          retry.addEventListener('click', loadBootstrap);
           select.addEventListener('change', () => {
+            start.disabled = !select.value;
             status.textContent = select.value ? 'Ready to start' : 'Choose a book first.';
           });
           select.addEventListener('keydown', (event) => {
@@ -214,18 +306,8 @@
             showScreen();
           }, true);
 
-          if (!window.google || !google.script || !google.script.run) {
-            setBooks(['Demo', 'TOEIC']);
-            return;
-          }
-
-          google.script.run
-            .withSuccessHandler(setBooks)
-            .withFailureHandler(() => {
-              setBooks([]);
-              status.textContent = 'Could not load books. Reload the app.';
-            })
-            .getSheetNames();
+          applyConfig(DEFAULT_CONFIG);
+          loadBootstrap();
         }
 
         window.addEventListener('DOMContentLoaded', initializeLaunchScreen, { once: true });
@@ -233,22 +315,26 @@
     </script>
   </head>
   <body>
-    <section class="launch-screen" id="launchScreen" aria-label="Choose a book" aria-hidden="false">
+    <section class="launch-screen" id="launchScreen" aria-labelledby="launchTitle" aria-describedby="launchStatus" aria-hidden="false" aria-busy="true">
       <div class="launch-card">
         <header class="launch-brand">
           <div class="launch-icon" aria-hidden="true">📚</div>
           <p class="launch-kicker">STUDY APP</p>
-          <h1 class="launch-title">Study Shorts</h1>
+          <h1 class="launch-title" id="launchTitle">Study Shorts</h1>
           <p class="launch-subtitle">Choose a book to begin.</p>
         </header>
         <div class="launch-field">
           <label class="launch-label" for="launchBookSelect">Books</label>
           <select class="launch-select" id="launchBookSelect" disabled>
-            <option>Loading books...</option>
+            <option value="">Loading books…</option>
           </select>
         </div>
-        <button class="launch-start" id="launchStart" type="button" disabled>Start</button>
-        <p class="launch-status" id="launchStatus" role="status" aria-live="polite">Loading books...</p>
+        <div class="launch-actions">
+          <button class="launch-start" id="launchStart" type="button" disabled>Start</button>
+          <button class="launch-retry" id="launchRetry" type="button" hidden>Retry</button>
+        </div>
+        <p class="launch-status" id="launchStatus" role="status" aria-live="polite">Loading books…</p>
+        <p class="launch-version" id="launchVersion">Version 0.2.0</p>
       </div>
     </section>
 
