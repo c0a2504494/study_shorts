@@ -1,0 +1,9 @@
+{
+  "appId": "com.c0a2504494.studyshorts",
+  "appName": "Study Shorts",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  }
+}
