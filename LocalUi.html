@@ -1,5 +1,60 @@
+<style>
+  .settings-help-popover {
+    position: fixed;
+    z-index: 9999;
+    left: 50%;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 26px);
+    width: min(calc(100vw - 32px), 390px);
+    transform: translate(-50%, 12px) scale(.98);
+    padding: 14px 16px;
+    border: 1px solid rgb(255 255 255 / 18%);
+    border-radius: 16px;
+    background: rgb(18 21 26 / 96%);
+    color: #fff;
+    box-shadow: 0 18px 50px rgb(0 0 0 / 58%);
+    font-size: 14px;
+    font-weight: 750;
+    line-height: 1.55;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease, transform 120ms ease;
+    white-space: pre-wrap;
+  }
+  .settings-help-popover.visible {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  .drawer .tool,
+  .drawer .drawer-number {
+    -webkit-touch-callout: none;
+    user-select: none;
+  }
+  .profile-action {
+    cursor: default;
+  }
+</style>
+
+<div class="settings-help-popover" id="settingsHelpPopover" role="tooltip" aria-hidden="true"></div>
+
 <script>
 (() => {
+  const HELP_DELAY = 520;
+  const HELP_TEXT = Object.freeze({
+    toggleReverse: 'Reverse：問題と答えを入れ替えて表示します。',
+    toggleSpeakOnFlip: 'Flip Say：カードを裏返したとき、答えを読み上げます。',
+    toggleLeftHandMode: 'Left：操作ボタンを左側へ移動します。',
+    toggleFixedBackground: '背景固定：カードを切り替えても背景画像を固定します。',
+    backgroundProbabilityInput: 'Background Rate：背景画像を表示する確率です。0は表示なし、1は毎回表示です。空欄なら自動設定になります。',
+    saveBackgroundProbability: 'Save：入力した背景表示率を保存します。',
+    clearBackgroundProbability: 'Auto：背景表示率を自動設定へ戻します。',
+    setAllRankTwo: 'Review 2：現在のBookにあるカードのRankをまとめて2にします。',
+    setAllRankThree: 'Review 3：現在のBookにあるカードのRankをまとめて3にします。',
+    deleteCurrentBackground: 'Del BG：現在表示中カードの背景設定を削除します。',
+    deleteRankTwo: 'Del 1：Rank 1のカードを削除します。実行前に内容を確認してください。',
+    decrementStudyCounts: 'C -1：すべてのカードの学習回数を1減らします。',
+    toggleStudyCountAverage: '回数平均以上：学習回数がBook内の平均以上のカードだけを表示します。'
+  });
+
   function applyDefaultNumbers(row) {
     if (!row) return;
     const cells = [...row.cells];
@@ -38,6 +93,97 @@
     observer.observe(gridBody, { childList: true, subtree: true });
   }
 
+  function helpFor(target) {
+    if (!target) return '';
+    if (target.id && HELP_TEXT[target.id]) return HELP_TEXT[target.id];
+
+    if (target.matches('[data-rank-filter="all"]')) return 'All：すべてのRankのカードを表示します。';
+    if (target.matches('[data-rank-filter="1"]')) return '1：Rankがちょうど1のカードだけを表示します。';
+    if (target.matches('[data-rank-filter="1x"]')) return '1.1–1.9：Rankが1.1以上2未満のカードだけを表示します。';
+    if (target.matches('[data-rank-filter="2x"]')) return '2–2.9：Rankが2以上3未満のカードだけを表示します。';
+
+    const min = target.dataset?.studyCountMin;
+    if (min) return `回数${min}回以上：学習回数が${min}回以上のカードだけを表示します。`;
+
+    return '';
+  }
+
+  function installLongPressHelp() {
+    const drawer = document.getElementById('drawer');
+    const popover = document.getElementById('settingsHelpPopover');
+    if (!drawer || !popover) return;
+
+    let timer = 0;
+    let activeTarget = null;
+    let longPressed = false;
+    let suppressClickUntil = 0;
+
+    const hide = () => {
+      window.clearTimeout(timer);
+      timer = 0;
+      activeTarget = null;
+      popover.classList.remove('visible');
+      popover.setAttribute('aria-hidden', 'true');
+    };
+
+    const begin = (event) => {
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      const target = event.target.closest('.tool, .drawer-number');
+      const text = helpFor(target);
+      if (!target || !text) return;
+
+      hide();
+      activeTarget = target;
+      longPressed = false;
+      timer = window.setTimeout(() => {
+        if (activeTarget !== target) return;
+        longPressed = true;
+        suppressClickUntil = Date.now() + 700;
+        popover.textContent = text;
+        popover.classList.add('visible');
+        popover.setAttribute('aria-hidden', 'false');
+        if (navigator.vibrate) navigator.vibrate(20);
+      }, HELP_DELAY);
+    };
+
+    const end = () => {
+      window.clearTimeout(timer);
+      timer = 0;
+      if (longPressed) suppressClickUntil = Date.now() + 700;
+      longPressed = false;
+      activeTarget = null;
+      popover.classList.remove('visible');
+      popover.setAttribute('aria-hidden', 'true');
+    };
+
+    drawer.addEventListener('pointerdown', begin, true);
+    drawer.addEventListener('pointerup', end, true);
+    drawer.addEventListener('pointercancel', end, true);
+    drawer.addEventListener('pointerleave', end, true);
+
+    drawer.addEventListener('click', (event) => {
+      if (Date.now() < suppressClickUntil && event.target.closest('.tool, .drawer-number')) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }, true);
+  }
+
+  function disableProfileAction() {
+    document.addEventListener('click', (event) => {
+      const profile = event.target.closest('.profile-action');
+      if (!profile) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }, true);
+
+    document.querySelectorAll('.profile-action').forEach((button) => {
+      button.setAttribute('aria-disabled', 'true');
+      button.removeAttribute('aria-haspopup');
+      button.title = '';
+    });
+  }
+
   function updateLocalStorageCopy() {
     const help = document.querySelector('.book-editor-help');
     if (help) {
@@ -58,6 +204,8 @@
 
     installEditorDefaults();
     applyDefaultsToGrid();
+    installLongPressHelp();
+    disableProfileAction();
   }
 
   window.addEventListener('DOMContentLoaded', updateLocalStorageCopy, { once: true });
