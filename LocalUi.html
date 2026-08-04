@@ -1,9 +1,47 @@
 <script>
 (() => {
+  function applyDefaultNumbers(row) {
+    if (!row) return;
+    const cells = [...row.cells];
+    if (cells.length < 8) return;
+
+    const hasCardContent = [1, 2, 5, 6, 7]
+      .some((index) => String(cells[index]?.textContent || '').trim());
+    if (!hasCardContent) return;
+
+    if (!String(cells[3]?.textContent || '').trim()) cells[3].textContent = '2';
+    if (!String(cells[4]?.textContent || '').trim()) cells[4].textContent = '2';
+  }
+
+  function applyDefaultsToGrid() {
+    document.querySelectorAll('#bookGridBody tr').forEach(applyDefaultNumbers);
+  }
+
+  function installEditorDefaults() {
+    const gridBody = document.getElementById('bookGridBody');
+    if (!gridBody) return;
+
+    gridBody.addEventListener('input', (event) => {
+      applyDefaultNumbers(event.target.closest('tr'));
+    });
+
+    gridBody.addEventListener('paste', () => {
+      window.setTimeout(applyDefaultsToGrid, 0);
+    });
+
+    document.addEventListener('click', (event) => {
+      if (event.target.closest('#bookEditorSave')) applyDefaultsToGrid();
+      if (event.target.closest('#launchEdit')) window.setTimeout(applyDefaultsToGrid, 0);
+    }, true);
+
+    const observer = new MutationObserver(() => applyDefaultsToGrid());
+    observer.observe(gridBody, { childList: true, subtree: true });
+  }
+
   function updateLocalStorageCopy() {
     const help = document.querySelector('.book-editor-help');
     if (help) {
-      help.textContent = 'ExcelやGoogleスプレッドシートから複数セルを貼り付けできます。Saveすると、この端末のStudy Shortsデータベースへ保存されます。';
+      help.textContent = 'ExcelやGoogleスプレッドシートから複数セルを貼り付けできます。カードがある行のCountとRankが空欄なら、自動で2を入れて端末内へ保存します。';
     }
 
     const subtitle = document.querySelector('.launch-subtitle');
@@ -17,6 +55,9 @@
       rewrite();
       new MutationObserver(rewrite).observe(status, { childList: true, characterData: true, subtree: true });
     }
+
+    installEditorDefaults();
+    applyDefaultsToGrid();
   }
 
   window.addEventListener('DOMContentLoaded', updateLocalStorageCopy, { once: true });
