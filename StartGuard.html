@@ -11,8 +11,13 @@
     if (!start || !select || !status || !screen) return;
 
     let checking = false;
+    let allowNextStart = false;
 
     start.addEventListener('click', (event) => {
+      if (allowNextStart) {
+        allowNextStart = false;
+        return;
+      }
       if (checking || start.disabled) return;
 
       const name = String(select.value || '').trim();
@@ -43,6 +48,7 @@
           }
 
           finish();
+          allowNextStart = true;
           start.click();
         })
         .withFailureHandler((error) => {
