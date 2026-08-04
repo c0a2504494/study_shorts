@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#08090b">
+  <title>Study Shorts</title>
+  <style>
+    html, body {
+      min-height: 100%;
+      margin: 0;
+      background: #08090b;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .boot {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      text-align: center;
+    }
+    .boot-card {
+      width: min(100%, 360px);
+      padding: 28px 22px;
+      border: 1px solid rgba(255,255,255,.14);
+      border-radius: 22px;
+      background: #111318;
+    }
+    .boot-spinner {
+      width: 34px;
+      height: 34px;
+      margin: 0 auto 18px;
+      border: 3px solid rgba(255,255,255,.2);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    .boot h1 { margin: 0 0 8px; font-size: 24px; }
+    .boot p { margin: 0; color: rgba(255,255,255,.65); line-height: 1.6; }
+    .boot-error { color: #fca5a5 !important; white-space: pre-wrap; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <main class="boot" id="boot">
+    <section class="boot-card">
+      <div class="boot-spinner" aria-hidden="true"></div>
+      <h1>Study Shorts</h1>
+      <p id="bootStatus">アプリを読み込んでいます…</p>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const FILES = [
+        'Index.html',
+        'App.html',
+        'LocalStore.html',
+        'Editor.html',
+        'LocalUi.html',
+        'StartGuard.html'
+      ];
+
+      function extract(source, expression, label) {
+        const match = source.match(expression);
+        if (!match) throw new Error(`${label}を読み取れませんでした。`);
+        return match[1];
+      }
+
+      async function fetchText(path) {
+        const response = await fetch(`./${path}?v=20260804-2`, { cache: 'no-store' });
+        if (!response.ok) {
+          throw new Error(`${path}の取得に失敗しました（HTTP ${response.status}）。`);
+        }
+        return response.text();
+      }
+
+      async function start() {
+        const status = document.getElementById('bootStatus');
+
+        try {
+          const [indexSource, appSource, localStore, editor, localUi, startGuard] =
+            await Promise.all(FILES.map(fetchText));
+
+          const appStyles = extract(appSource, /<style\b[^>]*>([\s\S]*?)<\/style>/i, 'App.htmlのスタイル');
+          const appBody = extract(appSource, /<body\b[^>]*>([\s\S]*?)<\/body>/i, 'App.htmlの本文');
+
+          const appContent = [
+            `<style>${appStyles}</style>`,
+            '<script>window.STUDY_SHORTS_RUNTIME = "github-pages";<\/script>',
+            localStore,
+            appBody,
+            editor,
+            localUi,
+            startGuard
+          ].join('\n');
+
+          const output = indexSource
+            .replace(/<link rel="preconnect" href="https:\/\/drive\.google\.com">\s*/g, '')
+            .replace(/<link rel="preconnect" href="https:\/\/lh3\.googleusercontent\.com">\s*/g, '')
+            .replace('user-scalable=no', 'maximum-scale=5')
+            .replace('<?!= includeStudyApp(); ?>', appContent)
+            .replace(/Version 0\.2\.0/g, 'Version 0.5.0');
+
+          if (/<\?[!=]?/.test(output)) {
+            throw new Error('Google Apps Script用のテンプレートが残っています。');
+          }
+          if (!output.includes("const DB_NAME = 'study-shorts'")) {
+            throw new Error('端末内保存機能を読み込めませんでした。');
+          }
+          if (!output.includes('id="launchStart"')) {
+            throw new Error('開始画面を読み込めませんでした。');
+          }
+
+          document.open();
+          document.write(output);
+          document.close();
+        } catch (error) {
+          console.error(error);
+          status.className = 'boot-error';
+          status.textContent = `アプリを読み込めませんでした。\n${error?.message || error}\n\nページを再読み込みしてください。`;
+          document.querySelector('.boot-spinner')?.remove();
+        }
+      }
+
+      start();
+    })();
+  </script>
+</body>
+</html>
