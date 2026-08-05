@@ -24,7 +24,7 @@ jobs:
         with:
           node-version: 20
       - run: npm install --ignore-scripts
-      - run: npm run build
+      - run: STUDY_SHORTS_RUNTIME=github-pages npm run build
       - name: Validate standalone app
         run: |
           test -f dist/index.html
@@ -33,7 +33,7 @@ jobs:
           test -f dist/app-icon-192.svg
           test -f dist/app-icon-512.svg
           ! grep -q '<?' dist/index.html
-          grep -q 'STUDY_SHORTS_RUNTIME = "capacitor"' dist/index.html
+          grep -q 'STUDY_SHORTS_RUNTIME = "github-pages"' dist/index.html
           grep -q "const DB_NAME = 'study-shorts'" dist/index.html
           grep -q 'id="launchStart"' dist/index.html
           grep -q 'id="appGuide"' dist/index.html
