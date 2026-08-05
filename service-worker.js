@@ -1,4 +1,4 @@
-const CACHE_NAME = 'study-shorts-shell-v1';
+const CACHE_NAME = 'study-shorts-shell-v2';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -47,7 +47,7 @@ self.addEventListener('fetch', (event) => {
         }
         return response;
       } catch (error) {
-        return (await caches.match(request))
+        return (await caches.match(request, { ignoreSearch: true }))
           || (await caches.match('./index.html'))
           || (await caches.match('./'));
       }
@@ -57,7 +57,7 @@ self.addEventListener('fetch', (event) => {
 
   event.respondWith((async () => {
     const cache = await caches.open(CACHE_NAME);
-    const cached = await cache.match(request);
+    const cached = await cache.match(request, { ignoreSearch: true });
     const network = fetch(request).then((response) => {
       if (response.ok) cache.put(request, response.clone());
       return response;
