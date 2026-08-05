@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const root = resolve(scriptDirectory, '..');
 const dist = resolve(root, 'dist');
-const APP_VERSION = '0.6.0';
+const APP_VERSION = '0.6.1';
 const APP_RUNTIME = process.env.STUDY_SHORTS_RUNTIME || 'capacitor';
 
 async function read(name) {
@@ -18,7 +18,7 @@ function extract(source, expression, label) {
   return match[1];
 }
 
-const [indexSource, appSource, localStore, editor, localUi, startGuard, appEnhancements] = await Promise.all([
+const [indexSource, appSource, localStore, editor, localUi, startGuard, appEnhancements, uiFixes] = await Promise.all([
   read('Index.html'),
   read('App.html'),
   read('LocalStore.html'),
@@ -26,6 +26,7 @@ const [indexSource, appSource, localStore, editor, localUi, startGuard, appEnhan
   read('LocalUi.html'),
   read('StartGuard.html'),
   read('AppEnhancements.html'),
+  read('UiFixes.html'),
 ]);
 
 const appStyles = extract(appSource, /<style>([\s\S]*?)<\/style>/i, 'App styles');
@@ -39,6 +40,7 @@ const mobileContent = [
   localUi,
   startGuard,
   appEnhancements,
+  uiFixes,
 ].join('\n');
 
 const output = indexSource
@@ -62,6 +64,9 @@ if (!output.includes('id="launchStart"')) {
 }
 if (!output.includes('id="appGuide"')) {
   throw new Error('The onboarding and safety layer is missing.');
+}
+if (!output.includes('id="drawerCloseButton"')) {
+  throw new Error('The settings close control is missing.');
 }
 
 await rm(dist, { recursive: true, force: true });
