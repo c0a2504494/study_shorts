@@ -6,6 +6,7 @@ const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const root = resolve(scriptDirectory, '..');
 const dist = resolve(root, 'dist');
 const APP_VERSION = '0.6.0';
+const APP_RUNTIME = process.env.STUDY_SHORTS_RUNTIME || 'capacitor';
 
 async function read(name) {
   return readFile(resolve(root, name), 'utf8');
@@ -31,7 +32,7 @@ const appStyles = extract(appSource, /<style>([\s\S]*?)<\/style>/i, 'App styles'
 const appBody = extract(appSource, /<body[^>]*>([\s\S]*?)<\/body>/i, 'App body');
 const mobileContent = [
   `<style>${appStyles}</style>`,
-  '<script>window.STUDY_SHORTS_RUNTIME = "capacitor";</script>',
+  `<script>window.STUDY_SHORTS_RUNTIME = ${JSON.stringify(APP_RUNTIME)};</script>`,
   localStore,
   appBody,
   editor,
@@ -48,10 +49,10 @@ const output = indexSource
   .replace(/Version 0\.2\.0/g, `Version ${APP_VERSION}`);
 
 if (/<\?[!=]?/.test(output)) {
-  throw new Error('The mobile build still contains a Google Apps Script template tag.');
+  throw new Error('The standalone build still contains a Google Apps Script template tag.');
 }
-if (!output.includes('window.STUDY_SHORTS_RUNTIME = "capacitor"')) {
-  throw new Error('The Capacitor runtime marker is missing.');
+if (!output.includes(`window.STUDY_SHORTS_RUNTIME = ${JSON.stringify(APP_RUNTIME)}`)) {
+  throw new Error(`The ${APP_RUNTIME} runtime marker is missing.`);
 }
 if (!output.includes("const DB_NAME = 'study-shorts'")) {
   throw new Error('The IndexedDB storage layer is missing.');
@@ -68,7 +69,7 @@ await mkdir(dist, { recursive: true });
 await writeFile(resolve(dist, 'index.html'), output, 'utf8');
 await writeFile(
   resolve(dist, 'version.json'),
-  `${JSON.stringify({ version: APP_VERSION, runtime: 'capacitor' }, null, 2)}\n`,
+  `${JSON.stringify({ version: APP_VERSION, runtime: APP_RUNTIME }, null, 2)}\n`,
   'utf8',
 );
 
@@ -76,4 +77,4 @@ for (const asset of ['manifest.webmanifest', 'service-worker.js', 'app-icon-192.
   await copyFile(resolve(root, asset), resolve(dist, asset));
 }
 
-console.log(`Built ${resolve(dist, 'index.html')}`);
+console.log(`Built ${resolve(dist, 'index.html')} for ${APP_RUNTIME}`);
