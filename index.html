@@ -4,6 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#08090b">
+  <meta name="description" content="短時間のカード学習を端末内で続けられるStudy Shorts">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./app-icon-192.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./app-icon-192.svg">
   <title>Study Shorts</title>
   <style>
     html, body {
@@ -40,6 +44,9 @@
     .boot p { margin: 0; color: rgba(255,255,255,.65); line-height: 1.6; }
     .boot-error { color: #fca5a5 !important; white-space: pre-wrap; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) {
+      .boot-spinner { animation: none; border-top-color: rgba(255,255,255,.2); }
+    }
   </style>
 </head>
 <body>
@@ -61,7 +68,8 @@
         'LocalStore.html',
         'Editor.html',
         'LocalUi.html',
-        'StartGuard.html'
+        'StartGuard.html',
+        'AppEnhancements.html'
       ];
 
       function extract(source, expression, label) {
@@ -71,7 +79,7 @@
       }
 
       async function fetchText(path) {
-        const response = await fetch(`./${path}?v=20260804-2`, { cache: 'no-store' });
+        const response = await fetch(`./${path}?v=20260805-1`, { cache: 'no-store' });
         if (!response.ok) {
           throw new Error(`${path}の取得に失敗しました（HTTP ${response.status}）。`);
         }
@@ -82,7 +90,7 @@
         const status = document.getElementById('bootStatus');
 
         try {
-          const [indexSource, appSource, localStore, editor, localUi, startGuard] =
+          const [indexSource, appSource, localStore, editor, localUi, startGuard, appEnhancements] =
             await Promise.all(FILES.map(fetchText));
 
           const appStyles = extract(appSource, /<style\b[^>]*>([\s\S]*?)<\/style>/i, 'App.htmlのスタイル');
@@ -95,7 +103,8 @@
             appBody,
             editor,
             localUi,
-            startGuard
+            startGuard,
+            appEnhancements
           ].join('\n');
 
           const output = indexSource
@@ -103,7 +112,7 @@
             .replace(/<link rel="preconnect" href="https:\/\/lh3\.googleusercontent\.com">\s*/g, '')
             .replace('user-scalable=no', 'maximum-scale=5')
             .replace('<?!= includeStudyApp(); ?>', appContent)
-            .replace(/Version 0\.2\.0/g, 'Version 0.5.0');
+            .replace(/Version 0\.2\.0/g, 'Version 0.6.0');
 
           if (/<\?[!=]?/.test(output)) {
             throw new Error('Google Apps Script用のテンプレートが残っています。');
@@ -113,6 +122,9 @@
           }
           if (!output.includes('id="launchStart"')) {
             throw new Error('開始画面を読み込めませんでした。');
+          }
+          if (!output.includes('id="appGuide"')) {
+            throw new Error('初回案内と安全確認機能を読み込めませんでした。');
           }
 
           document.open();
