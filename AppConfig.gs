@@ -1,6 +1,6 @@
 const APP_CONFIG_ = Object.freeze({
   appName: 'Study Shorts',
-  version: '0.4.0',
+  version: '0.6.0',
   schemaVersion: 1,
   bookSchemaVersion: 1,
   storage: 'indexeddb',
