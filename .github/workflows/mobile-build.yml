@@ -18,8 +18,10 @@ jobs:
         with:
           node-version: 20
       - run: npm install --ignore-scripts
-      - run: npm run build
-      - name: Validate standalone output
+
+      - name: Build Capacitor app
+        run: npm run build
+      - name: Validate Capacitor output
         run: |
           test -f dist/index.html
           test -f dist/manifest.webmanifest
@@ -30,5 +32,17 @@ jobs:
           grep -q 'STUDY_SHORTS_RUNTIME = "capacitor"' dist/index.html
           grep -q "const DB_NAME = 'study-shorts'" dist/index.html
           grep -q 'id="launchStart"' dist/index.html
+          grep -q 'id="appGuide"' dist/index.html
+          grep -q 'id="appConfirm"' dist/index.html
+
+      - name: Build GitHub Pages app
+        run: STUDY_SHORTS_RUNTIME=github-pages npm run build
+      - name: Validate GitHub Pages output
+        run: |
+          test -f dist/index.html
+          test -f dist/manifest.webmanifest
+          test -f dist/service-worker.js
+          grep -q 'STUDY_SHORTS_RUNTIME = "github-pages"' dist/index.html
+          grep -q 'navigator.serviceWorker.register' dist/index.html
           grep -q 'id="appGuide"' dist/index.html
           grep -q 'id="appConfirm"' dist/index.html
