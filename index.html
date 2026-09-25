@@ -3201,7 +3201,9 @@
           state.items = state.items.filter((candidate, index) => index <= state.index || !candidate.isRepeatCopy || baseItemId(candidate) !== key);
         }
         state.repeatedIds.add(key);
-        [16, 11, 7, 4, 2].forEach((offset) => {
+        // Place each repeat at its final position relative to the current card.
+        // Insert in ascending order so earlier repeats do not shift later target positions.
+        [2, 4, 7, 10, 12].forEach((offset) => {
           state.items.splice(Math.min(state.items.length, state.index + offset), 0, repeatCopy(item, offset));
         });
         if (manual) {
