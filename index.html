@@ -989,6 +989,7 @@
       .action.tiny-action, .action.review-action { background: transparent; border: 0; box-shadow: none; }
       .review-stat { min-width: 42px; font-size: 20px; font-weight: 800; text-align: center; border-radius: 8px; padding: 4px 10px; background: transparent; color: #fff; }
       .study-clock { position: fixed; top: calc(var(--safe-top) + 17px); left: calc(var(--safe-left) + 56px); z-index: 11; display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; font-weight: 700; text-shadow: 0 1px 6px #000; pointer-events: none; }
+      .scroll-counter { position: fixed; top: calc(var(--safe-top) + 48px); left: calc(var(--safe-left) + 56px); z-index: 11; padding: 4px 8px; border: 1px solid rgb(255 255 255 / 35%); border-radius: 999px; background: rgb(0 0 0 / 48%); color: #fff; font-size: 11px; font-weight: 750; font-variant-numeric: tabular-nums; pointer-events: none; }
       .study-clock::before { content: ''; display: inline-block; flex: 0 0 16px; width: 16px; height: 16px; background: center / contain no-repeat url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23fff%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%229%22%2F%3E%3Cpath%20d%3D%22M12%207v5l3%202%22%2F%3E%3C%2Fsvg%3E"); }
       .playback { position: fixed; z-index: 12; bottom: 0; left: 0; right: 0; padding: 2px calc(var(--safe-right) + 12px) calc(var(--safe-bottom) + 4px) calc(var(--safe-left) + 8px); display: flex; gap: 10px; align-items: center; background: linear-gradient(transparent, #000b); }
       .playback button { flex: 0 0 44px; height: 44px; font-size: 24px; cursor: pointer; }
@@ -1049,7 +1050,8 @@
       .celebration-icon { font-size: 74px; animation: celebrate 650ms ease-out; }
       .celebration h2 { font-size: 24px; }
       .celebration p { line-height: 1.8; }
-      .speak-action:disabled { opacity: .45; cursor: default; }
+      .speak-action:disabled { opacity: .65; cursor: default; }
+      .speak-action:disabled::after { content: '予約済み'; display: block; font-size: 10px; font-weight: 800; line-height: 1.1; color: #fff; }
       .celebration button { margin-top: 12px; padding: 13px 36px; border-radius: 24px; background: #315c49; color: white; cursor: pointer; }
       @keyframes celebrate { 0% { transform: scale(.3) rotate(-18deg); } 60% { transform: scale(1.2) rotate(8deg); } 100% { transform: scale(1); } }
       @media (prefers-reduced-motion: reduce) {
@@ -1061,6 +1063,7 @@
   <body>
     <main class="app" aria-label="Study Shorts">
       <time class="study-clock" id="studyClock" aria-label="現在時刻"></time>
+      <div class="scroll-counter" id="scrollCounter" aria-label="スクロール回数">スクロール 0 / 50</div>
       <div class="top-bar">
         <button class="icon-button" id="backButton" aria-label="本棚に戻る" type="button" tabindex="0">
           <svg class="icon" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
@@ -4090,6 +4093,8 @@
       studySeek.addEventListener('change', () => { markSeen(); scheduleAuto(); });
       function registerSwipe() {
         swipeCount += 1;
+        const nextMilestone = Math.ceil((swipeCount + 1) / 50) * 50;
+        document.getElementById('scrollCounter').textContent = `スクロール ${swipeCount} / ${nextMilestone}`;
         if (swipeCount % 50 !== 0 || celebration.open) return;
         window.clearTimeout(state.autoTimer);
         celebrationFocus = document.activeElement;
