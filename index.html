@@ -2696,7 +2696,7 @@
 
       
       function loopForward() {
-        if (!state.items.length || state.settleCallback) return;
+        if (!state.items.length || state.settleCallback || state.rouletteRunning) return;
         scheduleRepeats();
         recordSkipIfUntouched(activeItem());
         commentsPanel.classList.remove('visible');
@@ -2717,6 +2717,7 @@
       }
 
       function loopBackward() {
+        if (state.rouletteRunning) return;
         commentsPanel.classList.remove('visible');
         const nextIndex = state.index - 1;
         if (nextIndex >= 0) {
@@ -3526,12 +3527,12 @@
 
       function scheduleAuto() {
         window.clearTimeout(state.autoTimer);
-        if (!state.auto || !state.items.length || document.hidden || document.querySelector('.sheet-panel.visible, .drawer.visible') || document.getElementById('celebration').open) return;
+        if (!state.auto || !state.items.length || state.rouletteRunning || document.hidden || document.querySelector('.sheet-panel.visible, .drawer.visible') || document.getElementById('celebration').open) return;
         state.autoTimer = window.setTimeout(loopForward, 2600);
       }
 
       viewport.addEventListener('mousedown', (event) => {
-        if (event.button !== 0 || state.items.length === 0) return;
+        if (event.button !== 0 || state.items.length === 0 || state.rouletteRunning) return;
         if (event.target.closest('button, select')) return;
         if (state.settleCallback) finishSlideSettle();
 
@@ -3573,7 +3574,7 @@
       });
 
       viewport.addEventListener('touchstart', (event) => {
-        if (event.touches.length !== 1 || state.items.length === 0) return;
+        if (event.touches.length !== 1 || state.items.length === 0 || state.rouletteRunning) return;
         if (event.target.closest('button, input, select')) return;
         if (state.settleCallback) finishSlideSettle();
 
@@ -3619,7 +3620,7 @@
       });
 
       function handleTap(event) {
-        if (state.justDragged) return;
+        if (state.justDragged || state.rouletteRunning) return;
         const target = event.target instanceof Element ? event.target : null;
         if (target?.closest('button, select')) return;
 
@@ -3643,7 +3644,7 @@
       viewport.addEventListener('wheel', (event) => {
         if (state.items.length === 0) return;
         event.preventDefault();
-        if (Math.abs(event.deltaY) < 18) return;
+        if (state.rouletteRunning || Math.abs(event.deltaY) < 18) return;
         const now = Date.now();
         if (state.settleCallback || now - state.lastWheelAt < 560) return;
         state.lastWheelAt = now;
@@ -3666,7 +3667,7 @@
         }
 
         const button = event.target.closest('.action, .profile-action');
-        if (!button) return;
+        if (!button || state.rouletteRunning) return;
         event.preventDefault();
         event.stopPropagation();
         if (button.classList.contains('profile-action')) openMastery();
@@ -3924,53 +3925,67 @@
       function spinRoulette() {
         if (!state.items.length || state.rouletteRunning) return;
         if (state.settleCallback) finishSlideSettle();
-        const currentId = baseItemId(activeItem());
-        const seen = new Set();
-        const candidates = [];
-        state.items.forEach((item, index) => {
-          const id = baseItemId(item);
-          if (id !== currentId && !seen.has(id)) { seen.add(id); candidates.push(index); }
-        });
-        if (!candidates.length) { showToast('選べる別のカードがありません'); return; }
 
+        // Never skip a pending Again card: only advance one position. When the
+        // next slot is ordinary, swap another ordinary card into that slot.
+        scheduleRepeats();
+        const origin = state.index;
+        const nextIndex = origin + 1;
+        if (nextIndex >= state.items.length) {
+          recordSkipIfUntouched(activeItem());
+          state.round += 1;
+          rebuildDeck({ keepRound: true });
+          showToast('次の一巡を始めます');
+          return;
+        }
+
+        const nextItem = state.items[nextIndex];
+        if (!nextItem.isRepeatCopy) {
+          const candidates = [];
+          for (let i = nextIndex; i < state.items.length; i += 1) {
+            if (!state.items[i].isRepeatCopy) candidates.push(i);
+          }
+          const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+          [state.items[nextIndex], state.items[chosen]] = [state.items[chosen], state.items[nextIndex]];
+        }
+        // Both the repeat positions and all already-scheduled repeat copies
+        // remain intact, including when roulette is used several times.
+        recordSkipIfUntouched(state.items[origin]);
+        commentsPanel.classList.remove('visible');
         stopMotionWork();
-        const target = candidates[Math.floor(Math.random() * candidates.length)];
+        const finish = () => {
+          snapTo(nextIndex, false);
+          viewport.classList.remove('roulette-running');
+          rouletteButton.classList.remove('rolling');
+          state.rouletteRunning = false;
+          updatePlayback();
+          markSeen();
+          scheduleAuto();
+          showToast(nextItem.isRepeatCopy ? 'Againの予約カードを出題しました' : 'ルーレットでカードを選びました');
+        };
+
         const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         if (reducedMotion) {
-          snapTo(target, false);
-          markSeen();
-          showToast('ルーレットでカードを選びました');
+          finish();
           return;
         }
 
         state.rouletteRunning = true;
-        rouletteButton.disabled = true;
+        updatePlayback();
         rouletteButton.classList.remove('rolling');
         void rouletteButton.offsetWidth;
         rouletteButton.classList.add('rolling');
         viewport.classList.add('roulette-running');
-
-        // Rapidly cycle through cards, then ease out before landing on the selected card.
+        const previews = state.items.map((_, index) => index).filter((index) => index !== origin);
         const steps = 18;
         let step = 0;
-        let previous = state.index;
         const advance = () => {
           if (step === steps) {
-            snapTo(target, false);
-            viewport.classList.remove('roulette-running');
-            rouletteButton.classList.remove('rolling');
-            state.rouletteRunning = false;
-            updatePlayback();
-            markSeen();
-            showToast('ルーレットでカードを選びました');
-            scheduleAuto();
+            finish();
             return;
           }
-          const choices = candidates.filter((index) => index !== previous && index !== target);
-          const pool = choices.length ? choices : candidates.filter((index) => index !== previous);
-          const next = pool.length ? pool[Math.floor(Math.random() * pool.length)] : target;
-          snapTo(next, false);
-          previous = next;
+          const preview = previews[Math.floor(Math.random() * previews.length)];
+          snapTo(preview, false);
           step += 1;
           const progress = step / steps;
           window.setTimeout(advance, 45 + 185 * progress * progress);
@@ -4030,12 +4045,12 @@
         if (!studySeek) return;
         studySeek.max = String(Math.max(0, state.items.length - 1));
         studySeek.value = String(Math.min(state.index, Math.max(0, state.items.length - 1)));
-        studySeek.disabled = !state.items.length;
+        studySeek.disabled = !state.items.length || state.rouletteRunning;
         studySeek.setAttribute('aria-valuetext', state.items.length ? `${state.items.length}枚中${state.index + 1}枚目` : 'カードがありません');
         rouletteButton.disabled = !state.items.length || state.rouletteRunning;
       }
       studySeek.addEventListener('input', () => {
-        if (!state.items.length) return;
+        if (!state.items.length || state.rouletteRunning) return;
         if (state.settleCallback) finishSlideSettle();
         stopMotionWork();
         snapTo(Number(studySeek.value), false);
