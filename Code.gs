@@ -1001,7 +1001,7 @@ function updateSheetStats_(sheet) {
       const hasCardContent = String(row[0] || row[1] || '').trim();
       const rank = Number(row[3]);
       if (hasCardContent && Number.isFinite(rank)) {
-        sum += Math.min(4, Math.max(1, rank));
+        sum += Math.min(3, Math.max(1, rank));
         count += 1;
       }
     });
@@ -1053,7 +1053,7 @@ function normalizeRank_(value) {
   if (!Number.isFinite(rank) || rank < 1) {
     return 3;
   }
-  return Math.min(4, Math.max(1, Math.round(rank * 10) / 10));
+  return Math.min(3, Math.max(1, Math.round(rank * 10) / 10));
 }
 
 function syncDriveFolderImagesToSheet_(sheet) {
