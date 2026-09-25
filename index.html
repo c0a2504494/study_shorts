@@ -981,8 +981,16 @@
       .playback input::-webkit-slider-thumb { appearance: none; -webkit-appearance: none; width: 8px; height: 8px; margin-top: -3px; border: 0; border-radius: 50%; background: #f05c58; }
       .playback input::-moz-range-thumb { width: 8px; height: 8px; border: 0; border-radius: 50%; background: #f05c58; }
       .roulette-wheel { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 1.6; }
-      .rolling .roulette-wheel { animation: roulette-spin 850ms cubic-bezier(.12,.7,.2,1); }
-      @keyframes roulette-spin { to { transform: rotate(720deg); } }
+      .rolling .roulette-wheel { animation: roulette-spin 2400ms cubic-bezier(.16,.7,.22,1) both; }
+      @keyframes roulette-spin { to { transform: rotate(1440deg); } }
+      .roulette-running .short { animation: roulette-card-in 145ms ease-out both; }
+      @keyframes roulette-card-in {
+        from { opacity: .45; filter: blur(3px); transform: translate3d(0, 12px, 0) scale(.985); }
+        to { opacity: 1; filter: blur(0); transform: translate3d(0, 0, 0) scale(1); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .rolling .roulette-wheel, .roulette-running .short { animation: none; }
+      }
       .playback button:focus-visible, .playback input:focus-visible { outline: 2px solid white; outline-offset: 2px; }
       .bottom-meta { bottom: calc(var(--safe-bottom) + 60px); }
       .drawer-range-grid { grid-template-columns: 1fr 1fr; }
@@ -1341,6 +1349,7 @@
         justDraggedTimer: 0,
         touchedIds: new Set(),
         loginRecordedSheets: new Set(),
+        rouletteRunning: false,
       };
 
       function normalizeRank(value) {
@@ -3911,7 +3920,7 @@
       }
 
       function spinRoulette() {
-        if (!state.items.length) return;
+        if (!state.items.length || state.rouletteRunning) return;
         if (state.settleCallback) finishSlideSettle();
         const currentId = baseItemId(activeItem());
         const seen = new Set();
@@ -3921,14 +3930,50 @@
           if (id !== currentId && !seen.has(id)) { seen.add(id); candidates.push(index); }
         });
         if (!candidates.length) { showToast('選べる別のカードがありません'); return; }
+
         stopMotionWork();
         const target = candidates[Math.floor(Math.random() * candidates.length)];
-        snapTo(target, false);
-        markSeen();
+        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (reducedMotion) {
+          snapTo(target, false);
+          markSeen();
+          showToast('ルーレットでカードを選びました');
+          return;
+        }
+
+        state.rouletteRunning = true;
+        rouletteButton.disabled = true;
         rouletteButton.classList.remove('rolling');
         void rouletteButton.offsetWidth;
         rouletteButton.classList.add('rolling');
-        showToast('ルーレットでカードを選びました');
+        viewport.classList.add('roulette-running');
+
+        // Rapidly cycle through cards, then ease out before landing on the selected card.
+        const steps = 18;
+        let step = 0;
+        let previous = state.index;
+        const advance = () => {
+          if (step === steps) {
+            snapTo(target, false);
+            viewport.classList.remove('roulette-running');
+            rouletteButton.classList.remove('rolling');
+            state.rouletteRunning = false;
+            updatePlayback();
+            markSeen();
+            showToast('ルーレットでカードを選びました');
+            scheduleAuto();
+            return;
+          }
+          const choices = candidates.filter((index) => index !== previous && index !== target);
+          const pool = choices.length ? choices : candidates.filter((index) => index !== previous);
+          const next = pool.length ? pool[Math.floor(Math.random() * pool.length)] : target;
+          snapTo(next, false);
+          previous = next;
+          step += 1;
+          const progress = step / steps;
+          window.setTimeout(advance, 45 + 185 * progress * progress);
+        };
+        advance();
       }
 
       function rankMood(rank) {
@@ -3985,7 +4030,7 @@
         studySeek.value = String(Math.min(state.index, Math.max(0, state.items.length - 1)));
         studySeek.disabled = !state.items.length;
         studySeek.setAttribute('aria-valuetext', state.items.length ? `${state.items.length}枚中${state.index + 1}枚目` : 'カードがありません');
-        rouletteButton.disabled = !state.items.length;
+        rouletteButton.disabled = !state.items.length || state.rouletteRunning;
       }
       studySeek.addEventListener('input', () => {
         if (!state.items.length) return;
