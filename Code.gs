@@ -21,6 +21,28 @@ function getSheetNames() {
     .map((sheet) => sheet.getName());
 }
 
+function getBookTreeLayout() {
+  const sheetNames = getSheetNames();
+  const raw = PropertiesService.getDocumentProperties().getProperty('bookTreeLayout') || '';
+  let layout = null;
+
+  try {
+    layout = raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    layout = null;
+  }
+
+  return normalizeBookTreeLayout_(layout, sheetNames);
+}
+
+function saveBookTreeLayout(layout) {
+  const normalized = normalizeBookTreeLayout_(layout, getSheetNames());
+  PropertiesService
+    .getDocumentProperties()
+    .setProperty('bookTreeLayout', JSON.stringify(normalized));
+  return normalized;
+}
+
 function authorizeDriveAccess() {
   DriveApp.getRootFolder().getName();
   SpreadsheetApp.getActiveSpreadsheet().getName();
@@ -29,6 +51,7 @@ function authorizeDriveAccess() {
 
 function getStudyItems(sheetName) {
   const sheet = getTargetSheet_(sheetName);
+  const resolvedSheetName = sheet.getName();
   const syncResult = syncDriveFolderImagesToSheet_(sheet);
   const lastRow = sheet.getLastRow();
   const lastColumn = Math.max(sheet.getLastColumn(), 15);
@@ -37,10 +60,17 @@ function getStudyItems(sheetName) {
     const stats = updateSheetStats_(sheet);
     return {
       items: [],
+      deckStats: [{
+        sheetName: resolvedSheetName,
+        cardCount: 0,
+        averageRank: stats.averageRank,
+        todayPlayCount: stats.todayPlayCount,
+        totalPlayCount: stats.totalPlayCount,
+      }],
       backgroundUrls: [],
-      backgroundProbability: null,
+      backgroundProbability: 1,
       masteredProbability: 0.05,
-      fixedBackground: false,
+      fixedBackground: true,
       averageRank: stats.averageRank,
       todayPlayCount: stats.todayPlayCount,
       totalPlayCount: stats.totalPlayCount,
@@ -61,36 +91,46 @@ function getStudyItems(sheetName) {
   const answerDriveUrls = getAnswerDriveUrls_(sheet, lastRow);
   const backgroundUrls = getBackgroundUrls_(sheet, lastRow);
   const rowBackgroundUrls = getRowBackgroundUrls_(sheet, lastRow);
-  const rawBackgroundProbability = String(values[1] && values[1][9] || '').trim();
-  const backgroundProbability = rawBackgroundProbability === ''
-    ? null
-    : normalizeProbability_(rawBackgroundProbability);
+  const rawBackgroundProbability = String(values[1]?.[9] ?? '').trim();
+  const backgroundProbability = rawBackgroundProbability === '0' ? 0 : 1;
   const rawMasteredProbability = String(values[1] && values[1][14] || '').trim();
   const masteredProbability = rawMasteredProbability === ''
     ? 0.05
     : normalizeProbability_(rawMasteredProbability);
-  const fixedBackground = parseBooleanSetting_(values[3] && values[3][9]);
+  const fixedBackground = true;
 
   const sheetItems = values
-    .map((row, index) => ({
-      row: index + 1,
-      question: row[0].trim() || (questionImageUrls[index] ? 'Image' : ''),
-      questionImageUrl: questionImageUrls[index] || '',
-      questionDriveUrl: questionDriveUrls[index] || '',
-      answer: row[1].trim(),
-      answerImageUrl: answerImageUrls[index] || '',
-      answerDriveUrl: answerDriveUrls[index] || '',
-      backgroundUrl: rowBackgroundUrls[index] || '',
-      comments: row.slice(4, 7).map((comment) => comment.trim()).filter(Boolean),
-      skip: Number(row[2]) || 0,
-      studyCount: Number(row[2]) || 0,
-      rank: normalizeRank_(row[3]),
-    }))
-    .filter((item) => item.question || item.questionImageUrl);
+    .map((row, index) => {
+      const questionImageUrl = questionImageUrls[index] || '';
+      const answerImageUrl = answerImageUrls[index] || '';
+      return {
+        row: index + 1,
+        sheetName: resolvedSheetName,
+        question: questionImageUrl ? 'Image' : row[0].trim(),
+        questionImageUrl,
+        questionDriveUrl: questionDriveUrls[index] || '',
+        answer: answerImageUrl ? 'Image' : row[1].trim(),
+        answerImageUrl,
+        answerDriveUrl: answerDriveUrls[index] || '',
+        backgroundUrl: rowBackgroundUrls[index] || '',
+        comments: row.slice(4, 7).map((comment) => comment.trim()).filter(Boolean),
+        skip: Number(row[2]) || 0,
+        studyCount: Number(row[2]) || 0,
+        rank: normalizeRank_(row[3]),
+      };
+    })
+    .filter((item) => item.question || item.questionImageUrl || item.answerImageUrl);
   const stats = updateSheetStats_(sheet);
 
   return {
     items: sheetItems,
+    deckStats: [{
+      sheetName: resolvedSheetName,
+      cardCount: sheetItems.length,
+      averageRank: stats.averageRank,
+      todayPlayCount: stats.todayPlayCount,
+      totalPlayCount: stats.totalPlayCount,
+    }],
     backgroundUrls,
     backgroundProbability,
     masteredProbability,
@@ -103,6 +143,86 @@ function getStudyItems(sheetName) {
     driveAdded: syncResult.added,
     driveRemoved: syncResult.removed,
     driveErrors: syncResult.errors,
+  };
+}
+
+function getStudyItemsForSheets(sheetNames) {
+  const names = Array.isArray(sheetNames)
+    ? sheetNames.map((name) => String(name || '').trim()).filter(Boolean)
+    : [String(sheetNames || '').trim()].filter(Boolean);
+  const uniqueNames = names.filter((name, index) => names.indexOf(name) === index);
+
+  if (uniqueNames.length <= 1) {
+    return getStudyItems(uniqueNames[0] || '');
+  }
+
+  const payloads = uniqueNames.map((name) => getStudyItems(name));
+  const items = [];
+  const deckStats = [];
+  const backgroundUrls = [];
+  const driveErrors = [];
+  let driveFolders = 0;
+  let driveImages = 0;
+  let driveAdded = 0;
+  let driveRemoved = 0;
+  let todayPlayCount = 0;
+  let totalPlayCount = 0;
+  let rankSum = 0;
+  let rankCount = 0;
+
+  payloads.forEach((payload, payloadIndex) => {
+    const sheetName = uniqueNames[payloadIndex];
+    const stats = payload.deckStats && payload.deckStats[0]
+      ? payload.deckStats[0]
+      : {
+          sheetName,
+          cardCount: (payload.items || []).length,
+          averageRank: payload.averageRank,
+          todayPlayCount: payload.todayPlayCount,
+          totalPlayCount: payload.totalPlayCount,
+        };
+    deckStats.push(Object.assign({}, stats, { sheetName }));
+    (payload.items || []).forEach((item) => {
+      const rank = Number(item.rank);
+      if (Number.isFinite(rank)) {
+        rankSum += rank;
+        rankCount += 1;
+      }
+      items.push(Object.assign({}, item, {
+        id: `${sheetName}:${item.row}:${item.question}:${item.answer}`,
+        sheetName,
+      }));
+    });
+    (payload.backgroundUrls || []).forEach((url) => {
+      if (url && !backgroundUrls.includes(url)) backgroundUrls.push(url);
+    });
+    driveFolders += Number(payload.driveFolders || 0);
+    driveImages += Number(payload.driveImages || 0);
+    driveAdded += Number(payload.driveAdded || 0);
+    driveRemoved += Number(payload.driveRemoved || 0);
+    todayPlayCount += Number(payload.todayPlayCount || 0);
+    totalPlayCount += Number(payload.totalPlayCount || 0);
+    (payload.driveErrors || []).forEach((error) => {
+      driveErrors.push(Object.assign({ sheetName }, error));
+    });
+  });
+
+  return {
+    items,
+    sheetNames: uniqueNames,
+    deckStats,
+    backgroundUrls,
+    backgroundProbability: payloads[0] ? payloads[0].backgroundProbability : 1,
+    masteredProbability: payloads[0] ? payloads[0].masteredProbability : 0.05,
+    fixedBackground: true,
+    averageRank: rankCount > 0 ? Math.round((rankSum / rankCount) * 100000000) / 100000000 : '',
+    todayPlayCount,
+    totalPlayCount,
+    driveFolders,
+    driveImages,
+    driveAdded,
+    driveRemoved,
+    driveErrors,
   };
 }
 
@@ -129,6 +249,20 @@ function setAllStudyRanks(rank, sheetName) {
   const stats = updateSheetStats_(sheet);
 
   return { ok: true, count, rank: targetRank, stats };
+}
+
+function setAllStudyRanksForSheets(rank, sheetNames) {
+  const names = normalizeSheetNameList_(sheetNames);
+  let count = 0;
+  let rankValue = normalizeRank_(rank);
+
+  names.forEach((name) => {
+    const result = setAllStudyRanks(rankValue, name);
+    count += Number(result.count || 0);
+    rankValue = result.rank;
+  });
+
+  return { ok: true, count, rank: rankValue, sheetCount: names.length };
 }
 
 function deleteRankTwoRows(sheetName) {
@@ -173,6 +307,141 @@ function deleteRankTwoRows(sheetName) {
   const stats = updateSheetStats_(sheet);
 
   return { ok: true, deleted, compacted, stats };
+}
+
+function deleteRankTwoRowsForSheets(sheetNames) {
+  const names = normalizeSheetNameList_(sheetNames);
+  let deleted = 0;
+  let compacted = 0;
+
+  names.forEach((name) => {
+    const result = deleteRankTwoRows(name);
+    deleted += Number(result.deleted || 0);
+    compacted += Number(result.compacted || 0);
+  });
+
+  return { ok: true, deleted, compacted, sheetCount: names.length };
+}
+
+function deleteStudyCard(row, sheetName) {
+  const targetRow = Number(row);
+
+  if (!targetRow || targetRow < 1) {
+    return { ok: false, deleted: 0, message: 'invalid row.' };
+  }
+
+  const sheet = getTargetSheet_(sheetName);
+  const lastRow = sheet.getLastRow();
+
+  if (targetRow > lastRow) {
+    return { ok: false, deleted: 0, message: 'row not found.' };
+  }
+
+  const controls = getSheetControlValues_(sheet);
+  sheet.deleteRow(targetRow);
+  restoreSheetControlValues_(sheet, controls);
+  const stats = updateSheetStats_(sheet);
+
+  return { ok: true, row: targetRow, deleted: 1, stats };
+}
+
+function decrementAllStudyCountsForSheets(sheetNames) {
+  const names = normalizeSheetNameList_(sheetNames);
+  let updated = 0;
+
+  names.forEach((name) => {
+    const result = decrementAllStudyCounts(name);
+    updated += Number(result.updated || 0);
+  });
+
+  return { ok: true, updated, sheetCount: names.length };
+}
+
+function normalizeSheetNameList_(sheetNames) {
+  const names = Array.isArray(sheetNames)
+    ? sheetNames.map((name) => String(name || '').trim()).filter(Boolean)
+    : [String(sheetNames || '').trim()].filter(Boolean);
+  return names.filter((name, index) => names.indexOf(name) === index);
+}
+
+function normalizeBookTreeLayout_(layout, sheetNames) {
+  const validSheetNames = normalizeSheetNameList_(sheetNames);
+  const usedSheets = {};
+
+  function cleanNode(node, fallbackIndex) {
+    const rawType = String(node && node.type || '').trim();
+    const type = rawType === 'folder' ? 'folder' : 'sheet';
+    const id = String(node && node.id || `${type}-${fallbackIndex}`).trim();
+
+    if (type === 'folder') {
+      return {
+        id,
+        type: 'folder',
+        name: String(node && node.name || 'Folder').trim() || 'Folder',
+        children: cleanNodes(node && node.children),
+      };
+    }
+
+    const sheetName = String(node && node.sheetName || '').trim();
+    if (!sheetName || !validSheetNames.includes(sheetName) || usedSheets[sheetName]) {
+      return null;
+    }
+
+    usedSheets[sheetName] = true;
+    return {
+      id,
+      type: 'sheet',
+      name: String(node && node.name || sheetName).trim() || sheetName,
+      sheetName,
+      children: [],
+    };
+  }
+
+  function cleanNodes(nodes) {
+    return (Array.isArray(nodes) ? nodes : [])
+      .map((node, index) => cleanNode(node, index))
+      .filter(Boolean);
+  }
+
+  const rootChildren = cleanNodes(layout && layout.children);
+  validSheetNames.forEach((sheetName) => {
+    if (!usedSheets[sheetName]) {
+      rootChildren.push({
+        id: `sheet-${sheetName}`,
+        type: 'sheet',
+        name: sheetName,
+        sheetName,
+        children: [],
+      });
+    }
+  });
+
+  return {
+    version: 1,
+    children: rootChildren,
+  };
+}
+
+function getSheetControlValues_(sheet) {
+  return {
+    backgroundProbability: sheet.getRange('J2').getValue(),
+    fixedBackground: sheet.getRange('J4').getValue(),
+    streak: sheet.getRange('K2').getValue(),
+    lastLogin: sheet.getRange('L2').getValue(),
+    todayPlayCount: sheet.getRange('N2').getValue(),
+    totalPlayCount: sheet.getRange('N4').getValue(),
+    masteredProbability: sheet.getRange('O2').getValue(),
+  };
+}
+
+function restoreSheetControlValues_(sheet, controls) {
+  sheet.getRange('J2').setValue(controls.backgroundProbability);
+  sheet.getRange('J4').setValue(controls.fixedBackground);
+  sheet.getRange('K2').setValue(controls.streak);
+  sheet.getRange('L2').setValue(controls.lastLogin);
+  sheet.getRange('N2').setValue(controls.todayPlayCount);
+  sheet.getRange('N4').setValue(controls.totalPlayCount);
+  sheet.getRange('O2').setValue(controls.masteredProbability);
 }
 
 function compactStudyColumns_(sheet) {
@@ -249,7 +518,7 @@ function deleteBackgroundUrl(backgroundUrl, sheetName) {
 
 function setFixedBackgroundMode(enabled, sheetName) {
   const sheet = getTargetSheet_(sheetName);
-  const fixed = parseBooleanSetting_(enabled);
+  const fixed = true;
   sheet.getRange('J4').setValue(fixed ? 1 : '');
   return { ok: true, fixedBackground: fixed };
 }
@@ -257,15 +526,7 @@ function setFixedBackgroundMode(enabled, sheetName) {
 function setBackgroundProbability(probability, sheetName) {
   const sheet = getTargetSheet_(sheetName);
   const rawValue = String(probability === null || probability === undefined ? '' : probability).trim();
-  if (rawValue === '') {
-    sheet.getRange('J2').clearContent();
-    return { ok: true, backgroundProbability: null };
-  }
-
-  const normalized = normalizeProbability_(rawValue);
-  if (normalized === null) {
-    throw new Error('Background probability must be 0 to 1.');
-  }
+  const normalized = rawValue === '0' ? 0 : 1;
 
   sheet.getRange('J2').setValue(normalized);
   return { ok: true, backgroundProbability: normalized };
@@ -826,11 +1087,16 @@ function syncDriveFolderImagesToSheet_(sheet) {
         currentFileIds[fileId] = true;
         const name = file.getName() || 'Drive image';
         const imageUrl = driveFileImageUrl_(fileId);
-        const existingRow = existing.byFileId[fileId] || existing.byName[name];
+        const existingFileRow = existing.byFileId[fileId] || 0;
+        const existingNameRow = existing.byName[name] || 0;
+        const existingRow = existingFileRow ||
+          (existingNameRow && existing.driveRows[existingNameRow] ? existingNameRow : 0);
 
         if (existingRow) {
-          setLinkedCell_(sheet.getRange(existingRow, 1), name, imageUrl);
-          setLinkedCell_(sheet.getRange(existingRow, 2), name, imageUrl);
+          if (existing.driveRows[existingRow]) {
+            setLinkedCell_(sheet.getRange(existingRow, 1), name, imageUrl);
+            setLinkedCell_(sheet.getRange(existingRow, 2), name, imageUrl);
+          }
           existing.byFileId[fileId] = existingRow;
           existing.byName[name] = existingRow;
           continue;
@@ -867,7 +1133,7 @@ function syncDriveFolderImagesToSheet_(sheet) {
 
 function getExistingImageRows_(sheet) {
   const lastRow = sheet.getLastRow();
-  const result = { byFileId: {}, byName: {}, driveRows: {} };
+  const result = { byFileId: {}, byName: {}, driveRows: {}, manualFileIds: {} };
 
   if (lastRow < 1) {
     return result;
@@ -876,6 +1142,7 @@ function getExistingImageRows_(sheet) {
   const range = sheet.getRange(1, 1, lastRow, 2);
   const displayValues = range.getDisplayValues();
   const richTextValues = range.getRichTextValues();
+  const formulas = range.getFormulas();
 
   displayValues.forEach((row, index) => {
     const rowNumber = index + 1;
@@ -888,7 +1155,11 @@ function getExistingImageRows_(sheet) {
     for (let column = 0; column < 2; column += 1) {
       const richText = richTextValues[index] && richTextValues[index][column];
       const linkUrl = String((richText && richText.getLinkUrl()) || '').trim();
-      const fileId = extractDriveFileId_(linkUrl);
+      const textUrl = String(row[column] || '').trim();
+      const formulaUrl = extractImageFormulaUrl_(formulas[index] && formulas[index][column]);
+      const fileId = extractDriveFileId_(textUrl) ||
+        extractDriveFileId_(linkUrl) ||
+        extractDriveFileId_(formulaUrl);
       if (fileId && !result.byFileId[fileId]) {
         result.byFileId[fileId] = rowNumber;
       }
@@ -897,12 +1168,19 @@ function getExistingImageRows_(sheet) {
       }
     }
 
-    if (rowFileIds.length > 0 && rowFileIds.every((fileId) => fileId === rowFileIds[0])) {
+    const isSyncedDriveRow = rowFileIds.length > 0 && rowFileIds.every((fileId) => fileId === rowFileIds[0]);
+    if (isSyncedDriveRow) {
       const question = String(row[0] || '').trim();
       const answer = String(row[1] || '').trim();
       if (question && question === answer) {
         result.driveRows[rowNumber] = rowFileIds[0];
       }
+    }
+
+    if (!result.driveRows[rowNumber]) {
+      rowFileIds.forEach((fileId) => {
+        result.manualFileIds[fileId] = rowNumber;
+      });
     }
   });
 
@@ -912,7 +1190,10 @@ function getExistingImageRows_(sheet) {
 function removeStaleDriveRows_(sheet, existing, currentFileIds) {
   const rowsToDelete = Object.keys(existing.driveRows)
     .map((row) => Number(row))
-    .filter((row) => row > 0 && !currentFileIds[existing.driveRows[row]])
+    .filter((row) => {
+      const fileId = existing.driveRows[row];
+      return row > 0 && (!currentFileIds[fileId] || existing.manualFileIds[fileId]);
+    })
     .sort((a, b) => b - a);
 
   rowsToDelete.forEach((row) => sheet.deleteRow(row));
@@ -1095,13 +1376,14 @@ function driveFileOpenUrl_(fileId) {
 
 function extractDriveFileId_(url) {
   const value = String(url || '').trim();
-  if (!/drive\.google\.com/i.test(value)) {
+  if (!/(drive|docs)\.google\.com|drive\.usercontent\.google\.com/i.test(value)) {
     return '';
   }
 
-  const driveMatch = value.match(/drive\.google\.com\/file\/d\/([^/]+)/) ||
-    value.match(/[?&]id=([^&]+)/);
-  return driveMatch ? driveMatch[1] : '';
+  const driveMatch = value.match(/drive\.google\.com\/file\/d\/([^/?#]+)/i) ||
+    value.match(/docs\.google\.com\/(?:document|presentation|spreadsheets|drawings)\/d\/([^/?#]+)/i) ||
+    value.match(/[?&]id=([^&#]+)/i);
+  return driveMatch ? decodeURIComponent(driveMatch[1]) : '';
 }
 
 function extractImageFormulaUrl_(formula) {
@@ -1157,12 +1439,9 @@ function isImageLikeUrl_(url) {
 
 function normalizeImageUrl_(url) {
   const value = String(url || '').trim();
-  const driveMatch = /drive\.google\.com/i.test(value)
-    ? value.match(/drive\.google\.com\/file\/d\/([^/]+)/) || value.match(/[?&]id=([^&]+)/)
-    : null;
-
-  if (driveMatch) {
-    return driveFileImageUrl_(driveMatch[1]);
+  const driveFileId = extractDriveFileId_(value);
+  if (driveFileId) {
+    return driveFileImageUrl_(driveFileId);
   }
 
   return value;
