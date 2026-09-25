@@ -1049,6 +1049,7 @@
       .celebration-icon { font-size: 74px; animation: celebrate 650ms ease-out; }
       .celebration h2 { font-size: 24px; }
       .celebration p { line-height: 1.8; }
+      .speak-action:disabled { opacity: .45; cursor: default; }
       .celebration button { margin-top: 12px; padding: 13px 36px; border-radius: 24px; background: #315c49; color: white; cursor: pointer; }
       @keyframes celebrate { 0% { transform: scale(.3) rotate(-18deg); } 60% { transform: scale(1.2) rotate(8deg); } 100% { transform: scale(1); } }
       @media (prefers-reduced-motion: reduce) {
@@ -1082,7 +1083,7 @@
       <dialog class="celebration" id="celebration" aria-labelledby="celebrationTitle">
         <div class="celebration-icon" aria-hidden="true">🏅</div>
         <h2 id="celebrationTitle"></h2>
-        <p>積み重ねた一歩が、力になっています。<br>ここまで続けた自分に拍手！</p>
+        <p id="celebrationMessage">積み重ねた一歩が、力になっています。ここまで続けた自分に拍手！</p>
         <button type="button" id="celebrationClose">閉じて続ける</button>
       </dialog>
       <div class="drawer" id="drawer">
@@ -1357,6 +1358,7 @@
         settleCallback: null,
         pendingRemovalIds: new Set(),
         repeatedIds: new Set(),
+        againPressedItemIds: new Set(),
         revealedIds: new Set(),
         lastRankChange: '',
         lastRankChangeItemId: '',
@@ -1769,6 +1771,7 @@
       function rebuildDeck(options = {}) {
         const keepRound = options.keepRound === true;
         state.repeatedIds.clear();
+        state.againPressedItemIds.clear();
 
         state.revealedIds.clear();
         state.backgroundAssignments = {};
@@ -2578,6 +2581,9 @@
           slide.querySelector('.known-action').disabled = false;
           slide.querySelector('.tiny-action').disabled = false;
           slide.querySelector('.review-action').disabled = false;
+          const againButton = slide.querySelector('.speak-action');
+          againButton.disabled = state.againPressedItemIds.has(item.id);
+          againButton.setAttribute('aria-label', againButton.disabled ? '本気：このカードは予約済みです' : '本気：もう一度出題する');
           slide.querySelector('.review-action').classList.toggle('active', item.rank >= 3 || progress.review);
         });
 
@@ -2726,12 +2732,14 @@
           snapTo(nextIndex);
           afterSlideSettle(nextIndex, () => {
             markSeen();
+            registerSwipe();
             scheduleAuto();
           });
           return;
         }
         state.round += 1;
         rebuildDeck({ keepRound: true });
+        registerSwipe();
         showToast('次の一巡を始めます');
       }
 
@@ -2743,6 +2751,7 @@
           snapTo(nextIndex);
           afterSlideSettle(nextIndex, () => {
             markSeen();
+            registerSwipe();
             scheduleAuto();
           });
           return;
@@ -2751,6 +2760,7 @@
         state.items = weightedDeck(activePool());
         updateSlides();
         snapTo(Math.max(0, state.items.length - 1), false);
+        registerSwipe();
       }
 
       function afterSlideSettle(targetIndex, callback) {
@@ -3043,7 +3053,6 @@
 
         if (distance > threshold && mostlyVertical) {
           dy < 0 ? loopForward() : loopBackward();
-          registerSwipe();
           return;
         }
 
@@ -3214,9 +3223,12 @@
           if (manual) showToast('習得済みです。復習する場合は👎でランクを戻してください');
           return;
         }
+        if (manual && state.againPressedItemIds.has(item.id)) return;
         const key = baseItemId(item);
         if (!manual && (item.isRepeatCopy || state.repeatedIds.has(key))) return;
         if (manual) {
+          // Allow one manual reservation per displayed card instance, including each repeat copy.
+          state.againPressedItemIds.add(item.id);
           // 手動予約は、このカードの今後の予約を置き換える。
           state.items = state.items.filter((candidate, index) => index <= state.index || !candidate.isRepeatCopy || baseItemId(candidate) !== key);
         }
@@ -4078,10 +4090,16 @@
       studySeek.addEventListener('change', () => { markSeen(); scheduleAuto(); });
       function registerSwipe() {
         swipeCount += 1;
-        if (swipeCount % 50 !== 0) return;
+        if (swipeCount % 50 !== 0 || celebration.open) return;
         window.clearTimeout(state.autoTimer);
         celebrationFocus = document.activeElement;
-        document.getElementById('celebrationTitle').textContent = `${swipeCount}回スワイプ達成！`;
+        document.getElementById('celebrationTitle').textContent = `${swipeCount}回スクロール達成！`;
+        const messages = [
+          '50回も学習を続けました！この積み重ねが大きな力になります。',
+          '素晴らしい集中力です！ここまで続けた自分を褒めてあげてください。',
+          '着実に前進しています！今日の努力は確実に積み重なっています。',
+        ];
+        document.getElementById('celebrationMessage').textContent = messages[(swipeCount / 50 - 1) % messages.length];
         celebration.querySelector('.celebration-icon').textContent = swipeCount % 100 === 0 ? '🏆' : '🏅';
         celebration.showModal();
         document.getElementById('celebrationClose').focus();
