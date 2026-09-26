@@ -935,6 +935,49 @@
         pointer-events: auto;
       }
       .loading-screen.visible { display: grid; }
+      .title-screen {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: clamp(54px, 12vh, 96px);
+        padding: var(--safe-top) 24px var(--safe-bottom);
+        background: radial-gradient(ellipse at 50% 40%, #202c26 0%, #111715 45%, #080b0a 100%);
+        color: #e2eae4;
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+        transition: opacity 380ms ease, visibility 380ms;
+      }
+      .title-screen.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+      .title-screen h1 {
+        margin: 0;
+        font-size: clamp(38px, 10vw, 56px);
+        line-height: 1;
+        font-weight: 850;
+        letter-spacing: -.055em;
+      }
+      .title-start {
+        min-width: min(75vw, 260px);
+        min-height: 54px;
+        padding: 12px 32px;
+        border: 1px solid #728d7b;
+        border-radius: 999px;
+        background: #30483b;
+        color: #f0f5ef;
+        font-size: 17px;
+        font-weight: 800;
+        cursor: pointer;
+        transition: background 180ms ease, transform 180ms ease;
+      }
+      .title-start:active { transform: scale(.97); }
+      .title-start:focus-visible { outline: 2px solid #d7e6d9; outline-offset: 4px; }
+      @media (prefers-reduced-motion: reduce) {
+        .title-screen, .title-start { transition: none; }
+      }
       .loading-box {
         display: grid;
         justify-items: center;
@@ -1219,6 +1262,11 @@
         </div>
       </section>
 
+      <section class="title-screen" id="titleScreen" aria-label="タイトル画面">
+        <h1>StudyShorts</h1>
+        <button class="title-start" id="titleStart" type="button">始める</button>
+      </section>
+
       <div class="empty" id="empty">
         <p>A列に問題、B列に答えを入力してください。</p>
       </div>
@@ -1296,6 +1344,8 @@
       const template = document.getElementById('short-template');
       const empty = document.getElementById('empty');
       const loadingScreen = document.getElementById('loadingScreen');
+      const titleScreen = document.getElementById('titleScreen');
+      const titleStart = document.getElementById('titleStart');
       const toast = document.getElementById('toast');
       const drawer = document.getElementById('drawer');
       // Let a scroll close Settings during its entrance animation. If the
@@ -2720,6 +2770,25 @@
         requestAnimationFrame(() => setBooksReveal(pageWidth()));
       }
 
+      function showTitleScreen() {
+        drawer.classList.remove('visible');
+        commentsPanel.classList.remove('visible');
+        masteryPanel.classList.remove('visible');
+        settleBooks(false);
+        window.clearTimeout(state.autoTimer);
+        hideLoading();
+        titleScreen.classList.remove('hidden');
+        titleScreen.removeAttribute('aria-hidden');
+        titleStart.focus();
+      }
+
+      titleStart.addEventListener('click', () => {
+        titleScreen.classList.add('hidden');
+        titleScreen.setAttribute('aria-hidden', 'true');
+        hideLoading();
+        openBooks();
+      });
+
       function selectBook(name) {
         state.currentSheet = name;
         state.selectedSheetNames = [name];
@@ -3902,7 +3971,7 @@
 
       function scheduleAuto() {
         window.clearTimeout(state.autoTimer);
-        if (!state.auto || !state.items.length || state.rouletteRunning || document.hidden || document.querySelector('.sheet-panel.visible, .drawer.visible') || document.getElementById('celebration').open) return;
+        if (!state.auto || !state.items.length || state.rouletteRunning || document.hidden || !titleScreen.classList.contains('hidden') || document.querySelector('.sheet-panel.visible, .drawer.visible') || document.getElementById('celebration').open) return;
         state.autoTimer = window.setTimeout(loopForward, 2600);
       }
 
@@ -4087,7 +4156,7 @@
       backButton.addEventListener('click', openBooks);
       commentsClose.addEventListener('click', closeAllPanels);
       masteryClose.addEventListener('click', closeAllPanels);
-      bookClose.addEventListener('click', closeAllPanels);
+      bookClose.addEventListener('click', showTitleScreen);
       studySelectedBooks.addEventListener('click', studySelectedSheets);
       toggleBookEdit.addEventListener('click', () => {
         state.bookEditMode = !state.bookEditMode;
