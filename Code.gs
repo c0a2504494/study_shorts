@@ -697,7 +697,7 @@ function decrementAllStudyCounts(sheetName) {
   return { ok: true, updated };
 }
 
-function updateStudyRank(row, rank, sheetName, promotionCount, promotionTarget) {
+function updateStudyRank(row, rank, sheetName, promotionCount, promotionTarget, gradeChanged) {
   const targetRow = Number(row);
   const targetRank = normalizeRank_(rank);
 
@@ -706,12 +706,16 @@ function updateStudyRank(row, rank, sheetName, promotionCount, promotionTarget) 
   }
 
   const sheet = getTargetSheet_(sheetName);
-  const cell = sheet.getRange(targetRow, 4);
-  cell.setValue(gradeFromRank_(targetRank));
+  // Ordinary Good presses only update counters; skip the rank write and full
+  // statistics scan until the grade actually changes.
+  if (gradeChanged !== false) {
+    sheet.getRange(targetRow, 4).setValue(gradeFromRank_(targetRank));
+  }
   sheet.getRange(targetRow, 16, 1, 2).setValues([[
     Math.max(0, Math.floor(Number(promotionCount) || 0)),
     Math.max(0, Math.floor(Number(promotionTarget) || 0)),
   ]]);
+  if (gradeChanged === false) return { ok: true, row: targetRow, rank: targetRank };
   const stats = updateSheetStats_(sheet);
 
   return { ok: true, row: targetRow, rank: targetRank, stats };
