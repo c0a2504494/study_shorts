@@ -258,8 +258,10 @@ function setAllStudyRanks(rank, sheetName) {
   rankRange.setNotes(values.map((row, index) => [isCard[index]
     ? rankNote_(oldNotes[index][0], targetRank)
     : oldNotes[index][0]]));
-  sheet.getRange(1, 16, lastRow, 2).setValues(values.map((row, index) =>
-    isCard[index] ? [0, 0] : ['', '']));
+  const progressRange = sheet.getRange(1, 16, lastRow, 2);
+  const existingProgress = progressRange.getValues();
+  progressRange.setValues(existingProgress.map((row, index) =>
+    isCard[index] ? [0, 0] : row));
   const stats = updateSheetStats_(sheet);
 
   return { ok: true, count, rank: targetRank, stats };
