@@ -53,6 +53,7 @@ function getStudyItems(sheetName) {
   const sheet = getTargetSheet_(sheetName);
   const resolvedSheetName = sheet.getName();
   const syncResult = syncDriveFolderImagesToSheet_(sheet);
+  ensureLetterRanks_(sheet);
   const lastRow = sheet.getLastRow();
   const lastColumn = Math.max(sheet.getLastColumn(), 15);
 
@@ -91,6 +92,7 @@ function getStudyItems(sheetName) {
   const answerDriveUrls = getAnswerDriveUrls_(sheet, lastRow);
   const backgroundUrls = getBackgroundUrls_(sheet, lastRow);
   const rowBackgroundUrls = getRowBackgroundUrls_(sheet, lastRow);
+  const rankNotes = sheet.getRange(1, 4, lastRow, 1).getNotes();
   const rawBackgroundProbability = String(values[1]?.[9] ?? '').trim();
   const backgroundProbability = rawBackgroundProbability === '0' ? 0 : 1;
   const rawMasteredProbability = String(values[1] && values[1][14] || '').trim();
@@ -116,7 +118,7 @@ function getStudyItems(sheetName) {
         comments: row.slice(4, 7).map((comment) => comment.trim()).filter(Boolean),
         skip: Number(row[2]) || 0,
         studyCount: Number(row[2]) || 0,
-        rank: normalizeRank_(row[3]),
+        rank: normalizeRank_(row[3], rankNotes[index][0]),
       };
     })
     .filter((item) => item.question || item.questionImageUrl || item.answerImageUrl);
@@ -245,7 +247,12 @@ function setAllStudyRanks(rank, sheetName) {
     return [row[3]];
   });
 
-  sheet.getRange(1, 4, lastRow, 1).setValues(ranks);
+  const rankRange = sheet.getRange(1, 4, lastRow, 1);
+  const oldNotes = rankRange.getNotes();
+  rankRange.setValues(ranks.map((row, index) => [String(row[0]) === String(targetRank) ? gradeFromRank_(targetRank) : row[0]]));
+  rankRange.setNotes(ranks.map((row, index) => [String(row[0]) === String(targetRank)
+    ? rankNote_(oldNotes[index][0], targetRank)
+    : oldNotes[index][0]]));
   const stats = updateSheetStats_(sheet);
 
   return { ok: true, count, rank: targetRank, stats };
@@ -691,10 +698,11 @@ function updateStudyRank(row, rank, sheetName) {
     return { ok: false, message: 'invalid row.' };
   }
 
-  getTargetSheet_(sheetName)
-    .getRange(targetRow, 4)
-    .setValue(targetRank);
-  const stats = updateSheetStats_(getTargetSheet_(sheetName));
+  const sheet = getTargetSheet_(sheetName);
+  const cell = sheet.getRange(targetRow, 4);
+  cell.setValue(gradeFromRank_(targetRank));
+  cell.setNote(rankNote_(cell.getNote(), targetRank));
+  const stats = updateSheetStats_(sheet);
 
   return { ok: true, row: targetRow, rank: targetRank, stats };
 }
@@ -760,7 +768,8 @@ function addShortcutItem_(params) {
     });
   }
 
-  appendAfterLastValueInColumnA_(sheet, [question, answer, '', rank].concat(comments));
+  const addedRow = appendAfterLastValueInColumnA_(sheet, [question, answer, '', gradeFromRank_(rank)].concat(comments));
+  sheet.getRange(addedRow, 4).setNote(rankNote_('', rank));
   const stats = updateSheetStats_(sheet);
 
   return jsonResponse_({
@@ -997,11 +1006,11 @@ function updateSheetStats_(sheet) {
 
   if (lastRow >= 1) {
     const values = sheet.getRange(1, 1, lastRow, 4).getDisplayValues();
-    values.forEach((row) => {
+    const rankNotes = sheet.getRange(1, 4, lastRow, 1).getNotes();
+    values.forEach((row, index) => {
       const hasCardContent = String(row[0] || row[1] || '').trim();
-      const rank = Number(row[3]);
-      if (hasCardContent && Number.isFinite(rank)) {
-        sum += Math.min(3, Math.max(1, rank));
+      if (hasCardContent) {
+        sum += normalizeRank_(row[3], rankNotes[index][0]);
         count += 1;
       }
     });
@@ -1048,12 +1057,59 @@ function storedDateKey_(range, timezone) {
   ].join('-');
 }
 
-function normalizeRank_(value) {
-  const rank = Number(value);
-  if (!Number.isFinite(rank) || rank < 1) {
-    return 3;
+// D列にはS〜Eを保存します。0.1刻みの詳細値はD列のメモへ保存します。
+const RANK_GRADE_VALUES_ = { S: 1, A: 1.1, B: 1.5, C: 2, D: 2.5, E: 3 };
+const RANK_NOTE_PREFIX_ = 'StudyShorts numeric rank: ';
+
+function gradeFromRank_(value) {
+  const rank = normalizeRank_(value);
+  return rank <= 1 ? 'S' : rank < 1.5 ? 'A' : rank < 2 ? 'B'
+    : rank < 2.5 ? 'C' : rank < 3 ? 'D' : 'E';
+}
+
+function normalizeRank_(value, note) {
+  const text = String(value == null ? '' : value).trim().toUpperCase();
+  const gradeValue = RANK_GRADE_VALUES_[text];
+  if (gradeValue !== undefined) {
+    const match = String(note || '').match(/(?:^|\n)StudyShorts numeric rank: (\d(?:\.\d)?)(?:\n|$)/);
+    if (match) {
+      const detailed = Math.min(3, Math.max(1, Number(match[1])));
+      if (gradeFromNumericRank_(detailed) === text) return detailed;
+    }
+    return gradeValue;
   }
-  return Math.min(3, Math.max(1, Math.round(rank * 10) / 10));
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= 1
+    ? Math.min(3, Math.max(1, Math.round(numeric * 10) / 10)) : 3;
+}
+
+function gradeFromNumericRank_(rank) {
+  return rank <= 1 ? 'S' : rank < 1.5 ? 'A' : rank < 2 ? 'B'
+    : rank < 2.5 ? 'C' : rank < 3 ? 'D' : 'E';
+}
+
+function rankNote_(oldNote, rank) {
+  const withoutRank = String(oldNote || '')
+    .replace(/(?:^|\n)StudyShorts numeric rank: \d(?:\.\d)?(?=\n|$)/g, '')
+    .replace(/^\n|\n$/g, '');
+  return [withoutRank, RANK_NOTE_PREFIX_ + normalizeRank_(rank)].filter(Boolean).join('\n');
+}
+
+function ensureLetterRanks_(sheet) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 1) return;
+  const values = sheet.getRange(1, 1, lastRow, 4).getDisplayValues();
+  const rankRange = sheet.getRange(1, 4, lastRow, 1);
+  const notes = rankRange.getNotes();
+  values.forEach((row, index) => {
+    if (!String(row[0] || row[1] || '').trim()) return;
+    const existing = String(row[3] || '').trim().toUpperCase();
+    if (Object.prototype.hasOwnProperty.call(RANK_GRADE_VALUES_, existing)) return;
+    const numeric = normalizeRank_(row[3]);
+    const cell = sheet.getRange(index + 1, 4);
+    cell.setValue(gradeFromRank_(numeric));
+    cell.setNote(rankNote_(notes[index][0], numeric));
+  });
 }
 
 function syncDriveFolderImagesToSheet_(sheet) {
