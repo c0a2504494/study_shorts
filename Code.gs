@@ -35,6 +35,14 @@ function getBookTreeLayout() {
   return normalizeBookTreeLayout_(layout, sheetNames);
 }
 
+function getStartupData() {
+  const names = getSheetNames();
+  const raw = PropertiesService.getDocumentProperties().getProperty('bookTreeLayout') || '';
+  let layout = null;
+  try { layout = raw ? JSON.parse(raw) : null; } catch (error) { layout = null; }
+  return { names, layout: normalizeBookTreeLayout_(layout, names) };
+}
+
 function saveBookTreeLayout(layout) {
   const normalized = normalizeBookTreeLayout_(layout, getSheetNames());
   PropertiesService
