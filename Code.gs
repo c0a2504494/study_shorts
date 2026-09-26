@@ -239,18 +239,12 @@ function setAllStudyRanks(rank, sheetName) {
 
   const values = sheet.getRange(1, 1, lastRow, 4).getDisplayValues();
   let count = 0;
-  const ranks = values.map((row) => {
-    if (String(row[0] || row[1] || '').trim()) {
-      count += 1;
-      return [targetRank];
-    }
-    return [row[3]];
-  });
-
+  const isCard = values.map((row) => Boolean(String(row[0] || row[1] || '').trim()));
+  count = isCard.filter(Boolean).length;
   const rankRange = sheet.getRange(1, 4, lastRow, 1);
   const oldNotes = rankRange.getNotes();
-  rankRange.setValues(ranks.map((row, index) => [String(row[0]) === String(targetRank) ? gradeFromRank_(targetRank) : row[0]]));
-  rankRange.setNotes(ranks.map((row, index) => [String(row[0]) === String(targetRank)
+  rankRange.setValues(values.map((row, index) => [isCard[index] ? gradeFromRank_(targetRank) : row[3]]));
+  rankRange.setNotes(values.map((row, index) => [isCard[index]
     ? rankNote_(oldNotes[index][0], targetRank)
     : oldNotes[index][0]]));
   const stats = updateSheetStats_(sheet);
