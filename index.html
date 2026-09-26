@@ -4060,31 +4060,17 @@
           loadItems('Demo/Basic');
           return;
         }
-        // Independent metadata calls are parallel instead of sequential.
-        let namesReady = false;
-        let layoutReady = false;
-        let loaded = false;
-        let names = [];
-        let layout = null;
-        const startWhenReady = () => {
-          if (loaded || !namesReady || !layoutReady) return;
-          loaded = true;
-          state.sheetNames = names;
-          state.currentSheet = state.currentSheet || names[0] || '';
-          state.selectedSheetNames = state.currentSheet ? [state.currentSheet] : [];
-          state.bookTreeLayout = layout
-            ? normalizeBookTreeLayout(layout)
-            : fallbackBookTreeLayout(names);
-          loadItems(state.currentSheet);
-        };
+        // One server round-trip for the initial bookshelf and sheet list.
         google.script.run
-          .withSuccessHandler((result) => { names = result || []; namesReady = true; startWhenReady(); })
-          .withFailureHandler(() => { namesReady = true; startWhenReady(); })
-          .getSheetNames();
-        google.script.run
-          .withSuccessHandler((result) => { layout = result; layoutReady = true; startWhenReady(); })
-          .withFailureHandler(() => { layoutReady = true; startWhenReady(); })
-          .getBookTreeLayout();
+          .withSuccessHandler((startup) => {
+            state.sheetNames = startup?.names || [];
+            state.currentSheet = state.currentSheet || state.sheetNames[0] || '';
+            state.selectedSheetNames = state.currentSheet ? [state.currentSheet] : [];
+            state.bookTreeLayout = normalizeBookTreeLayout(startup?.layout);
+            loadItems(state.currentSheet);
+          })
+          .withFailureHandler(() => loadItems())
+          .getStartupData();
       }
 
       function spinRoulette() {
