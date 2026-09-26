@@ -989,8 +989,9 @@
       .reaction-icon.bad { transform: rotate(180deg); }
       .action.tiny-action, .action.review-action { background: transparent; border: 0; box-shadow: none; }
       .review-stat { min-width: 42px; font-size: 20px; font-weight: 800; text-align: center; border-radius: 8px; padding: 4px 10px; background: transparent; color: #fff; }
-      .study-clock { position: fixed; top: calc(var(--safe-top) + 17px); left: calc(var(--safe-left) + 56px); z-index: 11; display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; font-weight: 700; text-shadow: 0 1px 6px #000; pointer-events: none; }
-      .scroll-counter { position: fixed; top: calc(var(--safe-top) + 48px); left: calc(var(--safe-left) + 56px); z-index: 11; padding: 4px 8px; border: 1px solid rgb(255 255 255 / 35%); border-radius: 999px; background: rgb(0 0 0 / 48%); color: #fff; font-size: 11px; font-weight: 750; font-variant-numeric: tabular-nums; pointer-events: none; }
+      .study-hud { position: fixed; top: calc(var(--safe-top) + 17px); left: calc(var(--safe-left) + 56px); right: calc(var(--safe-right) + 58px); z-index: 11; display: flex; align-items: center; gap: 10px; min-width: 0; pointer-events: none; }
+      .study-clock { display: inline-flex; align-items: center; flex: 0 0 auto; gap: 6px; font-variant-numeric: tabular-nums; font-weight: 700; text-shadow: 0 1px 6px #000; white-space: nowrap; }
+      .scroll-counter { flex: 0 1 auto; min-width: 0; padding: 4px 8px; border: 1px solid rgb(255 255 255 / 35%); border-radius: 999px; background: rgb(0 0 0 / 48%); color: #fff; font-size: 11px; font-weight: 750; font-variant-numeric: tabular-nums; white-space: nowrap; }
       .study-clock::before { content: ''; display: inline-block; flex: 0 0 16px; width: 16px; height: 16px; background: center / contain no-repeat url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23fff%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%229%22%2F%3E%3Cpath%20d%3D%22M12%207v5l3%202%22%2F%3E%3C%2Fsvg%3E"); }
       .playback { position: fixed; z-index: 12; bottom: 0; left: 0; right: 0; padding: 2px calc(var(--safe-right) + 12px) calc(var(--safe-bottom) + 4px) calc(var(--safe-left) + 8px); display: flex; gap: 10px; align-items: center; background: linear-gradient(transparent, #000b); }
       .playback button { flex: 0 0 44px; height: 44px; font-size: 24px; cursor: pointer; }
@@ -1019,7 +1020,7 @@
       #bookPanel .book-toggle { color: #315c49; }
       #bookPanel .panel-header { background: #f6f2e9; border-color: #d6dcd1; }
       /* Books sits immediately to the left of Shorts. Both pages follow the finger. */
-      .viewport, .top-bar, .study-clock, .scroll-counter, .playback, .empty {
+      .viewport, .top-bar, .study-hud, .playback, .empty {
         transition: transform 430ms cubic-bezier(.22, .72, .18, 1);
         transform: translate3d(var(--books-reveal, 0px), 0, 0);
       }
@@ -1041,8 +1042,7 @@
       }
       .app.page-dragging .viewport,
       .app.page-dragging .top-bar,
-      .app.page-dragging .study-clock,
-      .app.page-dragging .scroll-counter,
+      .app.page-dragging .study-hud,
       .app.page-dragging .playback,
       .app.page-dragging .empty,
       .app.page-dragging #bookPanel { transition: none !important; }
@@ -1053,7 +1053,7 @@
         }
       }
       @media (prefers-reduced-motion: reduce) {
-        .viewport, .top-bar, .study-clock, .scroll-counter, .playback, .empty, #bookPanel { transition: none !important; }
+        .viewport, .top-bar, .study-hud, .playback, .empty, #bookPanel { transition: none !important; }
       }
       #bookPanel .panel-body { touch-action: pan-y; padding-bottom: calc(var(--safe-bottom) + 32px); }
       #bookPanel .tool { background: #e3eade; color: #263d35; border-color: #bccdbd; }
@@ -1100,8 +1100,10 @@
   </head>
   <body>
     <main class="app" aria-label="Study Shorts">
-      <time class="study-clock" id="studyClock" aria-label="現在時刻"></time>
-      <div class="scroll-counter" id="scrollCounter" aria-label="スクロール回数">スクロール 0 / 50</div>
+      <div class="study-hud">
+        <time class="study-clock" id="studyClock" aria-label="現在時刻"></time>
+        <div class="scroll-counter" id="scrollCounter" aria-label="スクロール回数">スクロール 0 / 50</div>
+      </div>
       <div class="top-bar">
         <button class="icon-button" id="backButton" aria-label="本棚に戻る" type="button" tabindex="0">
           <svg class="icon" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
@@ -1288,6 +1290,33 @@
       const loadingScreen = document.getElementById('loadingScreen');
       const toast = document.getElementById('toast');
       const drawer = document.getElementById('drawer');
+      // Dismiss settings on a deliberate vertical scroll, even while its entrance
+      // animation is still running. Its existing CSS transition handles the exit.
+      let settingsTouchStart = null;
+      const dismissSettingsOnScroll = () => {
+        if (!drawer.classList.contains('visible')) return;
+        drawer.classList.remove('visible');
+        scheduleAuto();
+      };
+      document.addEventListener('touchstart', (event) => {
+        settingsTouchStart = event.touches.length === 1
+          ? { x: event.touches[0].clientX, y: event.touches[0].clientY }
+          : null;
+      }, { capture: true, passive: true });
+      document.addEventListener('touchmove', (event) => {
+        if (!settingsTouchStart || event.touches.length !== 1 || !drawer.classList.contains('visible')) return;
+        const dx = event.touches[0].clientX - settingsTouchStart.x;
+        const dy = event.touches[0].clientY - settingsTouchStart.y;
+        if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx) * 1.2) {
+          settingsTouchStart = null;
+          dismissSettingsOnScroll();
+        }
+      }, { capture: true, passive: true });
+      document.addEventListener('touchend', () => { settingsTouchStart = null; }, { capture: true, passive: true });
+      document.addEventListener('touchcancel', () => { settingsTouchStart = null; }, { capture: true, passive: true });
+      document.addEventListener('wheel', (event) => {
+        if (Math.abs(event.deltaY) >= 8) dismissSettingsOnScroll();
+      }, { capture: true, passive: true });
       const commentsPanel = document.getElementById('commentsPanel');
       const commentsTitle = document.getElementById('commentsTitle');
       const commentList = document.getElementById('commentList');
