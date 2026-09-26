@@ -1588,6 +1588,12 @@
         loadRequestId: 0,
         syncedImageSheets: new Set(),
         sourceItemMap: new Map(),
+        startupReady: false,
+        startupFailed: false,
+        prefetchedBook: null,
+        prefetchBookName: '',
+        pendingPayloadLoads: new Map(),
+        progressSaveTimer: 0,
         sheetNames: [],
         currentSheet: '',
         selectedSheetNames: [],
@@ -1762,6 +1768,7 @@
       }
 
       function loadProgress() {
+        flushProgress();
         try {
           state.progress = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
         } catch (error) {
@@ -1769,9 +1776,24 @@
         }
       }
 
-      function saveProgress() {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state.progress));
+      function flushProgress() {
+        if (!state.progressSaveTimer) return;
+        window.clearTimeout(state.progressSaveTimer);
+        state.progressSaveTimer = 0;
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state.progress));
+        } catch (error) {
+          // Storage may be disabled; keep current in-memory progress usable.
+        }
       }
+
+      function saveProgress() {
+        // A rapid swipe sequence should not serialize the entire progress object
+        // to synchronous localStorage on every card.
+        if (state.progressSaveTimer) window.clearTimeout(state.progressSaveTimer);
+        state.progressSaveTimer = window.setTimeout(flushProgress, 250);
+      }
+      window.addEventListener('pagehide', flushProgress);
 
       function loadUiPreferences() {
         try {
@@ -2010,7 +2032,7 @@
         const value = String(url || '').trim();
         if (!/^https?:\/\//i.test(value) || state.imagePreloadCache.has(value)) return;
 
-        if (state.imagePreloadCache.size > 160) {
+        if (state.imagePreloadCache.size > 48) {
           const firstKey = state.imagePreloadCache.keys().next().value;
           if (firstKey) state.imagePreloadCache.delete(firstKey);
         }
@@ -2027,12 +2049,13 @@
         if (state.items.length === 0) return;
 
         const urls = [];
-        const start = Math.max(0, center - 1);
-        const end = Math.min(state.items.length - 1, center + 2);
+        const start = Math.max(0, center);
+        const end = Math.min(state.items.length - 1, center + 1);
         for (let position = start; position <= end; position += 1) {
           const item = sourceItemFor(state.items[position]);
           if (!item) continue;
-          urls.push(item.questionImageUrl, item.answerImageUrl);
+          urls.push(item.questionImageUrl);
+          if (position === center) urls.push(item.answerImageUrl);
           const backgroundUrl = state.fixedBackground
             ? item.backgroundUrl
             : state.backgroundAssignments[backgroundKeyForPosition(position)] || '';
@@ -2730,7 +2753,9 @@
         if (state.sheetNames.length === 0) {
           const emptyRow = document.createElement('div');
           emptyRow.className = 'book-item';
-          emptyRow.textContent = '本がありません';
+          emptyRow.textContent = !state.startupReady ? '本棚を読み込み中…'
+            : state.startupFailed ? '本棚の読み込みに失敗しました'
+            : '本がありません';
           bookList.appendChild(emptyRow);
           return;
         }
@@ -2940,6 +2965,8 @@
             node.style.setProperty('--card-bg-image', `url("${backgroundUrl.replace(/"/g, '\\"')}")`);
             node.style.setProperty('--card-bg-opacity', '.9');
             photo.referrerPolicy = 'no-referrer';
+            photo.loading = position === state.index ? 'eager' : 'lazy';
+            photo.decoding = 'async';
             photo.src = backgroundUrl;
             photo.onerror = () => {
               if (state.fixedBackground) return;
@@ -4469,7 +4496,11 @@
       }
       updateClock();
       window.setInterval(updateClock, 1000);
-      document.addEventListener('visibilitychange', () => { updateClock(); scheduleAuto(); });
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) flushProgress();
+        updateClock();
+        scheduleAuto();
+      });
 
       loadBooks();
     </script>
