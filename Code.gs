@@ -55,7 +55,6 @@ function getStudyItems(sheetName) {
   // Keep the first card fetch read-only and fast. Drive folder reconciliation
   // runs separately after cards are already on screen.
   const syncResult = { folderCount: 0, imageCount: 0, added: 0, removed: 0, errors: [] };
-  ensureLetterRanks_(sheet);
   const lastRow = sheet.getLastRow();
   const lastColumn = Math.max(sheet.getLastColumn(), 15);
 
@@ -1096,15 +1095,24 @@ function ensureLetterRanks_(sheet) {
     if (Object.prototype.hasOwnProperty.call(RANK_GRADE_VALUES_, existing)) return;
     fixes.push({ row: index + 1, grade: gradeFromRank_(row[3]) });
   });
-  // Once migrated, reads perform no writes. Avoid a note read/write per card.
-  fixes.forEach((fix) => sheet.getRange(fix.row, 4).setValue(fix.grade));
+  // Batch neighboring legacy rows to avoid one Sheets API write per card.
+  let start = 0;
+  while (start < fixes.length) {
+    let end = start + 1;
+    while (end < fixes.length && fixes[end].row === fixes[end - 1].row + 1) end += 1;
+    sheet.getRange(fixes[start].row, 4, end - start, 1)
+      .setValues(fixes.slice(start, end).map((fix) => [fix.grade]));
+    start = end;
+  }
 }
 
 function syncStudyImagesForSheets(sheetNames) {
   const names = normalizeSheetNameList_(sheetNames);
   const targets = names.length ? names : [getTargetSheet_().getName()];
   const results = targets.map((name) => {
-    const result = syncDriveFolderImagesToSheet_(getTargetSheet_(name));
+    const sheet = getTargetSheet_(name);
+    ensureLetterRanks_(sheet); // Migrate old numeric D cells after first paint.
+    const result = syncDriveFolderImagesToSheet_(sheet);
     return Object.assign({ sheetName: name }, result);
   });
   return {
