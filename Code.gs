@@ -64,10 +64,11 @@ function getStudyItems(sheetName) {
   // runs separately after cards are already on screen.
   const syncResult = { folderCount: 0, imageCount: 0, added: 0, removed: 0, errors: [] };
   const lastRow = sheet.getLastRow();
-  const lastColumn = Math.max(sheet.getLastColumn(), 17);
+  // Only A:Q is used for study data. Ignore unrelated far-right columns.
+  const lastColumn = 17;
 
   if (lastRow < 1) {
-    const stats = updateSheetStats_(sheet);
+    const stats = { averageRank: '', todayPlayCount: 0, totalPlayCount: 0 };
     return {
       items: [],
       deckStats: [{
@@ -95,13 +96,13 @@ function getStudyItems(sheetName) {
   const values = sheet
     .getRange(1, 1, lastRow, lastColumn)
     .getDisplayValues();
-  const cardMedia = getCardMedia_(sheet, lastRow);
+  const cardMedia = getCardMedia_(sheet, lastRow, values);
   const questionImageUrls = cardMedia.questionImages;
   const answerImageUrls = cardMedia.answerImages;
   const questionDriveUrls = cardMedia.questionDriveUrls;
   const answerDriveUrls = cardMedia.answerDriveUrls;
-  const backgroundUrls = getBackgroundUrls_(sheet, lastRow);
-  const rowBackgroundUrls = getRowBackgroundUrls_(sheet, lastRow);
+  const rowBackgroundUrls = getRowBackgroundUrlsFast_(sheet, lastRow, values);
+  const backgroundUrls = rowBackgroundUrls.slice(1).filter((url) => /^https?:\/\//i.test(url));
   const rawBackgroundProbability = String(values[1]?.[9] ?? '').trim();
   const backgroundProbability = rawBackgroundProbability === '0' ? 0 : 1;
   const rawMasteredProbability = String(values[1] && values[1][14] || '').trim();
@@ -133,7 +134,20 @@ function getStudyItems(sheetName) {
       };
     })
     .filter((item) => item.question || item.questionImageUrl || item.answerImageUrl);
-  const stats = updateSheetStats_(sheet);
+  // The same A:Q snapshot contains ranks and today's/total counts.
+  // Reading the entire sheet again and rewriting M2 on every open is unnecessary.
+  let rankSum = 0;
+  let rankCount = 0;
+  values.forEach((row) => {
+    if (!String(row[0] || row[1] || '').trim()) return;
+    rankSum += normalizeRank_(row[3]);
+    rankCount += 1;
+  });
+  const stats = {
+    averageRank: rankCount ? Math.round(rankSum / rankCount * 1e8) / 1e8 : '',
+    todayPlayCount: Number(values[1]?.[13]) || 0,
+    totalPlayCount: Number(values[3]?.[13]) || 0,
+  };
 
   return {
     items: sheetItems,
@@ -1297,9 +1311,9 @@ function setLinkedCell_(range, text, url) {
 
 // Read both card columns once instead of making four sets of rich-text/formula
 // calls for question image, answer image, and their Drive links.
-function getCardMedia_(sheet, lastRow) {
+function getCardMedia_(sheet, lastRow, displayedValues) {
   const range = sheet.getRange(1, 1, lastRow, 2);
-  const values = range.getDisplayValues();
+  const values = displayedValues || range.getDisplayValues();
   const rich = range.getRichTextValues();
   const formulas = range.getFormulas();
   const result = {
@@ -1505,6 +1519,22 @@ function extractDriveFileId_(url) {
 function extractImageFormulaUrl_(formula) {
   const match = String(formula || '').match(/=IMAGE\(\s*"([^"]+)"/i);
   return match ? match[1] : '';
+}
+
+// Use the already loaded display rows and read column I rich links/formulas once.
+function getRowBackgroundUrlsFast_(sheet, lastRow, values) {
+  if (lastRow < 1) return [];
+  const range = sheet.getRange(1, 9, lastRow, 1);
+  const rich = range.getRichTextValues();
+  const formulas = range.getFormulas();
+  return values.map((row, index) => {
+    const textUrl = String(row[8] || '').trim();
+    const linkUrl = String(rich[index]?.[0]?.getLinkUrl() || '').trim();
+    const formulaUrl = extractImageFormulaUrl_(formulas[index]?.[0]);
+    const url = /^https?:\/\//i.test(textUrl) ? textUrl : linkUrl || formulaUrl;
+    const result = normalizeImageUrl_(url);
+    return /^https?:\/\//i.test(result) ? result : '';
+  });
 }
 
 function getBackgroundUrls_(sheet, lastRow) {
