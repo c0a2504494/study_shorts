@@ -604,7 +604,6 @@ function getBackgroundCellUrl_(cell) {
 
 function recordDailyLogin(sheetName) {
   const sheet = getTargetSheet_(sheetName);
-  ensureStatsLabels_(sheet);
   const timezone = Session.getScriptTimeZone();
   const today = Utilities.formatDate(new Date(), timezone, 'yyyy-MM-dd');
   const lastDateCell = sheet.getRange('L2');
@@ -612,8 +611,17 @@ function recordDailyLogin(sheetName) {
   let streak = Number(sheet.getRange('K2').getValue()) || 0;
 
   if (lastDate === today) {
-    lastDateCell.setNumberFormat('@').setValue(today);
-    const stats = updateSheetStats_(sheet);
+    // Daily login already recorded: avoid formatting/writing L2 and a full
+    // rank scan every time the study page is opened.
+    const counters = sheet.getRange('N2:N4').getValues();
+    const savedAverage = sheet.getRange('M2').getValue();
+    const stats = {
+      todayPlayCount: Number(counters[0][0]) || 0,
+      totalPlayCount: Number(counters[2][0]) || 0,
+    };
+    if (savedAverage !== '' && savedAverage !== null) {
+      stats.averageRank = Number(savedAverage);
+    }
     return { ok: true, streak, today, stats };
   }
 
@@ -622,6 +630,7 @@ function recordDailyLogin(sheetName) {
   const yesterdayKey = Utilities.formatDate(yesterday, timezone, 'yyyy-MM-dd');
   streak = lastDate === yesterdayKey ? streak + 1 : 1;
 
+  ensureStatsLabels_(sheet);
   sheet.getRange('K2').setValue(streak);
   lastDateCell.setNumberFormat('@').setValue(today);
   sheet.getRange('N2').setValue(0);
