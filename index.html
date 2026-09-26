@@ -1018,6 +1018,7 @@
       #bookPanel .panel-body { width: 100%; max-width: 680px; margin: 0 auto; }
       #bookPanel .book-toggle { color: #315c49; }
       #bookPanel .panel-header { background: #f6f2e9; border-color: #d6dcd1; }
+      #bookPanel { touch-action: pan-y; overscroll-behavior-x: contain; }
       #bookPanel .panel-body { touch-action: pan-y; padding-bottom: calc(var(--safe-bottom) + 32px); }
       #bookPanel .tool { background: #e3eade; color: #263d35; border-color: #bccdbd; }
       #bookPanel .tool.active { background: #315c49; color: #fff; }
@@ -1261,19 +1262,40 @@
       const masteryList = document.getElementById('masteryList');
       const masteryClose = document.getElementById('masteryClose');
       const bookPanel = document.getElementById('bookPanel');
-      let bookshelfTouchStart = null;
+      // Swipe from right to left anywhere on Books to return to Shorts.
+      // Preserve vertical book-list scrolling and prevent a swipe from opening a book.
+      let bookshelfGesture = null;
       bookPanel.addEventListener('touchstart', (event) => {
-        if (event.touches.length !== 1) return;
-        bookshelfTouchStart = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+        if (!bookPanel.classList.contains('visible') || event.touches.length !== 1) return;
+        const touch = event.touches[0];
+        bookshelfGesture = { x: touch.clientX, y: touch.clientY, horizontal: false };
       }, { passive: true });
+      bookPanel.addEventListener('touchmove', (event) => {
+        if (!bookshelfGesture || event.touches.length !== 1) return;
+        const touch = event.touches[0];
+        const dx = touch.clientX - bookshelfGesture.x;
+        const dy = touch.clientY - bookshelfGesture.y;
+        if (dx < -12 && Math.abs(dx) > Math.abs(dy) * 1.3) bookshelfGesture.horizontal = true;
+        if (bookshelfGesture.horizontal) event.preventDefault();
+      }, { passive: false });
       bookPanel.addEventListener('touchend', (event) => {
-        if (!bookshelfTouchStart || event.changedTouches.length !== 1) return;
-        const dx = event.changedTouches[0].clientX - bookshelfTouchStart.x;
-        const dy = event.changedTouches[0].clientY - bookshelfTouchStart.y;
-        bookshelfTouchStart = null;
-        if (bookPanel.classList.contains('visible') && dx < -70 && Math.abs(dx) > Math.abs(dy) * 1.3) closeAllPanels();
+        if (!bookshelfGesture || event.changedTouches.length !== 1) return;
+        const dx = event.changedTouches[0].clientX - bookshelfGesture.x;
+        const dy = event.changedTouches[0].clientY - bookshelfGesture.y;
+        const returnToShorts = bookshelfGesture.horizontal && dx < -70 && Math.abs(dx) > Math.abs(dy) * 1.3;
+        bookshelfGesture = null;
+        if (returnToShorts && bookPanel.classList.contains('visible')) {
+          bookPanel.dataset.ignoreClick = 'true';
+          closeAllPanels();
+        }
       }, { passive: true });
-      bookPanel.addEventListener('touchcancel', () => { bookshelfTouchStart = null; }, { passive: true });
+      bookPanel.addEventListener('touchcancel', () => { bookshelfGesture = null; }, { passive: true });
+      bookPanel.addEventListener('click', (event) => {
+        if (bookPanel.dataset.ignoreClick !== 'true') return;
+        event.preventDefault();
+        event.stopPropagation();
+        delete bookPanel.dataset.ignoreClick;
+      }, true);
       const bookTitle = document.getElementById('bookTitle');
       const bookList = document.getElementById('bookList');
       const studySelectedBooks = document.getElementById('studySelectedBooks');
