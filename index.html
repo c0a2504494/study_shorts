@@ -4252,23 +4252,57 @@
         setBackgroundProbabilityFromInput(0);
       });
 
+      function requestStudyPayload(sheetNames, onSuccess, onFailure) {
+        const key = JSON.stringify(sheetNames);
+        const pending = state.pendingPayloadLoads.get(key);
+        if (pending) {
+          pending.push({ onSuccess, onFailure });
+          return;
+        }
+        const callbacks = [{ onSuccess, onFailure }];
+        state.pendingPayloadLoads.set(key, callbacks);
+        const complete = (method, result) => {
+          state.pendingPayloadLoads.delete(key);
+          callbacks.forEach((callback) => callback[method](result));
+        };
+        google.script.run
+          .withSuccessHandler((payload) => complete('onSuccess', payload))
+          .withFailureHandler((error) => complete('onFailure', error))
+          [sheetNames.length > 1 ? 'getStudyItemsForSheets' : 'getStudyItems'](
+            sheetNames.length > 1 ? sheetNames : sheetNames[0] || '');
+      }
+
+      function prefetchInitialBook(name) {
+        if (!name || !window.google?.script?.run) return;
+        state.prefetchBookName = name;
+        const key = JSON.stringify([name]);
+        requestStudyPayload([name], (payload) => {
+          // A selection made while prefetching takes precedence over this cache.
+          if (state.prefetchBookName === name) state.prefetchedBook = { key, payload };
+        }, () => {});
+      }
+
       function syncImagesAfterRender(sheetNames, requestId) {
         if (!window.google?.script?.run || !sheetNames.length) return;
-        const unsynced = sheetNames.filter((name) => !state.syncedImageSheets.has(name));
-        if (!unsynced.length) return;
-        unsynced.forEach((name) => state.syncedImageSheets.add(name));
-        // Drive reconciliation is not on the critical path for first paint.
-        google.script.run
-          .withSuccessHandler((result) => {
-            if (requestId !== state.loadRequestId) return;
-            if (Number(result?.added || 0) + Number(result?.removed || 0) > 0) {
-              loadItems(sheetNames, { skipSync: true });
-            }
-          })
-          .withFailureHandler(() => {
-            unsynced.forEach((name) => state.syncedImageSheets.delete(name));
-          })
-          .syncStudyImagesForSheets(unsynced);
+        // Yield the main thread and the first network round-trip to the visible
+        // cards before scanning Drive folders.
+        window.setTimeout(() => {
+          if (requestId !== state.loadRequestId) return;
+          const unsynced = sheetNames.filter((name) => !state.syncedImageSheets.has(name));
+          if (!unsynced.length) return;
+          unsynced.forEach((name) => state.syncedImageSheets.add(name));
+          google.script.run
+            .withSuccessHandler((result) => {
+              if (requestId !== state.loadRequestId) return;
+              if (Number(result?.added || 0) + Number(result?.removed || 0) > 0) {
+                loadItems(sheetNames, { skipSync: true });
+              }
+            })
+            .withFailureHandler(() => {
+              unsynced.forEach((name) => state.syncedImageSheets.delete(name));
+            })
+            .syncStudyImagesForSheets(unsynced);
+        }, 650);
       }
 
       function loadItems(sheetName = state.currentSheet, options = {}) {
@@ -4280,9 +4314,17 @@
           state.selectedSheetNames = sheetNames;
         }
         const requestId = ++state.loadRequestId;
-        showLoading('読み込み中');
+        const key = JSON.stringify(sheetNames);
+        const staged = state.prefetchedBook;
+        state.prefetchedBook = null;
+        state.prefetchBookName = '';
+        if (!options.skipSync) {
+          empty.querySelector('p').textContent = '教材を読み込み中…';
+          empty.classList.add('visible');
+        }
         if (!window.google || !google.script || !google.script.run) {
           state.sheetNames = ['Demo/Basic', 'Demo/TOEIC'];
+          state.startupReady = true;
           state.bookTreeLayout = fallbackBookTreeLayout(state.sheetNames);
           state.currentSheet = sheetNames[0] || 'Demo/Basic';
           state.selectedSheetNames = sheetNames.length > 0 ? sheetNames : [state.currentSheet];
@@ -4296,19 +4338,21 @@
           showToast('デモモード');
           return;
         }
-        google.script.run
-          .withSuccessHandler((payload) => {
-            if (requestId !== state.loadRequestId) return;
-            render(payload);
-            if (!options.skipSync) syncImagesAfterRender(sheetNames, requestId);
-          })
-          .withFailureHandler(() => {
-            if (requestId !== state.loadRequestId) return;
-            hideLoading();
-            empty.classList.add('visible');
-            empty.querySelector('p').textContent = 'カードを読み込めませんでした。';
-          })
-          [sheetNames.length > 1 ? 'getStudyItemsForSheets' : 'getStudyItems'](sheetNames.length > 1 ? sheetNames : sheetNames[0] || '');
+        const displayPayload = (payload) => {
+          if (requestId !== state.loadRequestId) return;
+          render(payload);
+          if (!options.skipSync) syncImagesAfterRender(sheetNames, requestId);
+        };
+        if (staged?.key === key && !options.skipSync) {
+          displayPayload(staged.payload);
+          return;
+        }
+        requestStudyPayload(sheetNames, displayPayload, () => {
+          if (requestId !== state.loadRequestId) return;
+          hideLoading();
+          empty.classList.add('visible');
+          empty.querySelector('p').textContent = 'カードを読み込めませんでした。';
+        });
       }
 
       function loadBooks() {
@@ -4316,17 +4360,25 @@
           loadItems('Demo/Basic');
           return;
         }
-        // One server round-trip for the initial bookshelf and sheet list.
+        state.startupReady = false;
+        state.startupFailed = false;
         google.script.run
           .withSuccessHandler((startup) => {
             state.sheetNames = startup?.names || [];
+            state.startupReady = true;
             state.currentSheet = state.currentSheet || state.sheetNames[0] || '';
             state.selectedSheetNames = state.currentSheet ? [state.currentSheet] : [];
             state.bookTreeLayout = normalizeBookTreeLayout(startup?.layout);
             if (bookPanel.classList.contains('visible')) renderBooks();
-            loadItems(state.currentSheet);
+            // Warm the first book in the background without building Shorts or
+            // downloading card images while the user is on the title/Books.
+            prefetchInitialBook(state.currentSheet);
           })
-          .withFailureHandler(() => loadItems())
+          .withFailureHandler(() => {
+            state.startupReady = true;
+            state.startupFailed = true;
+            if (bookPanel.classList.contains('visible')) renderBooks();
+          })
           .getStartupData();
       }
 
