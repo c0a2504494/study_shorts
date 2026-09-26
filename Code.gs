@@ -1051,7 +1051,7 @@ function storedDateKey_(range, timezone) {
   ].join('-');
 }
 
-// D列にはS〜Eを保存します。0.1刻みの詳細値はD列のメモへ保存します。
+// D列はS〜Eの文字ランクです。旧数値は読み込み時に文字ランクへ移行します。
 const RANK_GRADE_VALUES_ = { S: 1, A: 1.1, B: 1.5, C: 2, D: 2.5, E: 3 };
 const RANK_NOTE_PREFIX_ = 'StudyShorts numeric rank: ';
 
@@ -1063,18 +1063,14 @@ function gradeFromRank_(value) {
 
 function normalizeRank_(value, note) {
   const text = String(value == null ? '' : value).trim().toUpperCase();
-  const gradeValue = RANK_GRADE_VALUES_[text];
-  if (gradeValue !== undefined) {
-    const match = String(note || '').match(/(?:^|\n)StudyShorts numeric rank: (\d(?:\.\d)?)(?:\n|$)/);
-    if (match) {
-      const detailed = Math.min(3, Math.max(1, Number(match[1])));
-      if (gradeFromNumericRank_(detailed) === text) return detailed;
-    }
-    return gradeValue;
+  if (Object.prototype.hasOwnProperty.call(RANK_GRADE_VALUES_, text)) {
+    return RANK_GRADE_VALUES_[text];
   }
+  // Convert legacy numeric grades to the nearest defined letter band.
   const numeric = Number(value);
-  return Number.isFinite(numeric) && numeric >= 1
-    ? Math.min(3, Math.max(1, Math.round(numeric * 10) / 10)) : 3;
+  const legacy = Number.isFinite(numeric) && numeric >= 1
+    ? Math.min(3, Math.max(1, numeric)) : 3;
+  return RANK_GRADE_VALUES_[gradeFromNumericRank_(legacy)];
 }
 
 function gradeFromNumericRank_(rank) {
@@ -1086,7 +1082,7 @@ function rankNote_(oldNote, rank) {
   const withoutRank = String(oldNote || '')
     .replace(/(?:^|\n)StudyShorts numeric rank: \d(?:\.\d)?(?=\n|$)/g, '')
     .replace(/^\n|\n$/g, '');
-  return [withoutRank, RANK_NOTE_PREFIX_ + normalizeRank_(rank)].filter(Boolean).join('\n');
+  return withoutRank;
 }
 
 function ensureLetterRanks_(sheet) {
