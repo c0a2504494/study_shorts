@@ -635,30 +635,21 @@ function recordCardPlay(sheetName) {
   lock.waitLock(5000);
   try {
     const sheet = getTargetSheet_(sheetName);
-    ensureStatsLabels_(sheet);
     const timezone = Session.getScriptTimeZone();
     const today = Utilities.formatDate(new Date(), timezone, 'yyyy-MM-dd');
-    const lastDateCell = sheet.getRange('L2');
-    const lastDate = storedDateKey_(lastDateCell, timezone);
+    const lastDate = storedDateKey_(sheet.getRange('L2'), timezone);
+    if (lastDate !== today) recordDailyLogin(sheetName);
 
-    if (lastDate !== today) {
-      recordDailyLogin(sheetName);
-    } else {
-      lastDateCell.setNumberFormat('@').setValue(today);
-    }
-
-    const todayCount = (Number(sheet.getRange('N2').getValue()) || 0) + 1;
-    const totalCount = (Number(sheet.getRange('N4').getValue()) || 0) + 1;
-    sheet.getRange('N2').setValue(todayCount);
-    sheet.getRange('N4').setValue(totalCount);
-    const stats = updateSheetStats_(sheet);
-
-    return {
-      ok: true,
-      todayPlayCount: todayCount,
-      totalPlayCount: totalCount,
-      averageRank: stats.averageRank,
-    };
+    // Read/write both counters together. Do not rewrite static headers,
+    // today's date or rescan all ranks for each single card viewed.
+    const counterRange = sheet.getRange('N2:N4');
+    const counters = counterRange.getValues();
+    const todayCount = (Number(counters[0][0]) || 0) + 1;
+    const totalCount = (Number(counters[2][0]) || 0) + 1;
+    counters[0][0] = todayCount;
+    counters[2][0] = totalCount;
+    counterRange.setValues(counters);
+    return { ok: true, todayPlayCount: todayCount, totalPlayCount: totalCount };
   } finally {
     lock.releaseLock();
   }
