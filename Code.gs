@@ -95,10 +95,11 @@ function getStudyItems(sheetName) {
   const values = sheet
     .getRange(1, 1, lastRow, lastColumn)
     .getDisplayValues();
-  const questionImageUrls = getQuestionImageUrls_(sheet, lastRow);
-  const answerImageUrls = getAnswerImageUrls_(sheet, lastRow);
-  const questionDriveUrls = getQuestionDriveUrls_(sheet, lastRow);
-  const answerDriveUrls = getAnswerDriveUrls_(sheet, lastRow);
+  const cardMedia = getCardMedia_(sheet, lastRow);
+  const questionImageUrls = cardMedia.questionImages;
+  const answerImageUrls = cardMedia.answerImages;
+  const questionDriveUrls = cardMedia.questionDriveUrls;
+  const answerDriveUrls = cardMedia.answerDriveUrls;
   const backgroundUrls = getBackgroundUrls_(sheet, lastRow);
   const rowBackgroundUrls = getRowBackgroundUrls_(sheet, lastRow);
   const rawBackgroundProbability = String(values[1]?.[9] ?? '').trim();
@@ -1279,6 +1280,36 @@ function setLinkedCell_(range, text, url) {
       .setLinkUrl(url)
       .build()
   );
+}
+
+// Read both card columns once instead of making four sets of rich-text/formula
+// calls for question image, answer image, and their Drive links.
+function getCardMedia_(sheet, lastRow) {
+  const range = sheet.getRange(1, 1, lastRow, 2);
+  const values = range.getDisplayValues();
+  const rich = range.getRichTextValues();
+  const formulas = range.getFormulas();
+  const result = {
+    questionImages: [], answerImages: [],
+    questionDriveUrls: [], answerDriveUrls: [],
+  };
+  values.forEach((row, index) => {
+    for (let column = 0; column < 2; column += 1) {
+      const textUrl = String(row[column] || '').trim();
+      const richText = rich[index] && rich[index][column];
+      const linkUrl = String((richText && richText.getLinkUrl()) || '').trim();
+      const formulaUrl = extractImageFormulaUrl_(formulas[index] && formulas[index][column]);
+      const fileId = extractDriveFileId_(textUrl) ||
+        extractDriveFileId_(linkUrl) || extractDriveFileId_(formulaUrl);
+      const url = fileId ? driveFileImageUrl_(fileId)
+        : (/^https?:\/\//i.test(textUrl) ? textUrl : linkUrl || formulaUrl);
+      const image = fileId ? url : (isImageLikeUrl_(url) ? normalizeImageUrl_(url) : '');
+      result[column === 0 ? 'questionImages' : 'answerImages'].push(image);
+      result[column === 0 ? 'questionDriveUrls' : 'answerDriveUrls']
+        .push(fileId ? driveFileOpenUrl_(fileId) : '');
+    }
+  });
+  return result;
 }
 
 function getQuestionImageUrls_(sheet, lastRow) {
