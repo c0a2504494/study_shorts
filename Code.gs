@@ -614,15 +614,10 @@ function recordDailyLogin(sheetName) {
     // Daily login already recorded: avoid formatting/writing L2 and a full
     // rank scan every time the study page is opened.
     const counters = sheet.getRange('N2:N4').getValues();
-    const savedAverage = sheet.getRange('M2').getValue();
-    const stats = {
+    return { ok: true, streak, today, stats: {
       todayPlayCount: Number(counters[0][0]) || 0,
       totalPlayCount: Number(counters[2][0]) || 0,
-    };
-    if (savedAverage !== '' && savedAverage !== null) {
-      stats.averageRank = Number(savedAverage);
-    }
-    return { ok: true, streak, today, stats };
+    } };
   }
 
   const yesterday = new Date();
