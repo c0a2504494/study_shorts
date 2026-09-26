@@ -1039,7 +1039,7 @@
       .reaction-icon.bad { transform: rotate(180deg); }
       .action.tiny-action, .action.review-action { background: transparent; border: 0; box-shadow: none; }
       /* Keep the promotion counter in the data, but show icons only. */
-      .tiny-action .action-label, .review-action .action-label { display: none; }
+      .tiny-action .action-label, .review-action .action-label { display: block; font-size: 11px; font-weight: 850; }
       .review-stat { min-width: 42px; font-size: 20px; font-weight: 800; text-align: center; border-radius: 8px; padding: 4px 10px; background: transparent; color: #fff; }
       .study-hud { position: fixed; top: calc(var(--safe-top) + 17px); left: calc(var(--safe-left) + 56px); right: calc(var(--safe-right) + 58px); z-index: 11; display: flex; align-items: center; gap: 10px; min-width: 0; pointer-events: none; }
       .study-clock { display: inline-flex; align-items: center; flex: 0 0 auto; gap: 6px; font-variant-numeric: tabular-nums; font-weight: 700; text-shadow: 0 1px 6px #000; white-space: nowrap; }
@@ -1306,11 +1306,11 @@
           </button>
           <button class="action tiny-action" type="button" tabindex="0" aria-label="グッド：ランクアップ進捗を増やす" title="グッド">
             <svg class="reaction-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v11H3V10zM7 10l5-8c2 0 3 1.5 2.5 3.5L14 9h5a2 2 0 0 1 2 2.4l-1.5 8A2 2 0 0 1 17.5 21H7"/></svg>
-            <span class="action-label">ランクUP</span>
+            <span class="action-label">UP</span>
           </button>
           <button class="action review-action" type="button" tabindex="0" aria-label="バッド：ランクを1段階下げる" title="バッド">
             <svg class="reaction-icon bad" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v11H3V10zM7 10l5-8c2 0 3 1.5 2.5 3.5L14 9h5a2 2 0 0 1 2 2.4l-1.5 8A2 2 0 0 1 17.5 21H7"/></svg>
-            <span class="action-label">ランクDOWN</span>
+            <span class="action-label">DOWN</span>
           </button>
           <button class="action comment-action" type="button" tabindex="0">
             <svg class="icon" viewBox="0 0 24 24"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg>
@@ -2913,8 +2913,9 @@
           slide.querySelector('.tiny-action').disabled = false;
           slide.querySelector('.review-action').disabled = false;
           const promotion = promotionProgress(item);
-          slide.querySelector('.tiny-action .action-label').textContent =
-            promotion.target ? `👍 ${promotion.count}/${promotion.target}` : 'Sランク';
+          slide.querySelector('.tiny-action .action-label').textContent = 'UP';
+          slide.querySelector('.tiny-action').title = promotion.target
+            ? `UP：${promotion.count}/${promotion.target}` : 'Sランク';
           const againButton = slide.querySelector('.speak-action');
           againButton.disabled = state.againPressedItemIds.has(item.id);
           againButton.setAttribute('aria-label', againButton.disabled ? '本気：このカードは予約済みです' : '本気：もう一度出題する');
