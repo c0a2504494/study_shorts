@@ -1021,11 +1021,12 @@
       .playback button:focus-visible, .playback input:focus-visible { outline: 2px solid white; outline-offset: 2px; }
       .bottom-meta { bottom: calc(var(--safe-bottom) + 60px); }
       .drawer-range-grid { grid-template-columns: 1fr 1fr; }
-      #bookPanel { color-scheme: light; background: #f6f2e9; color: #263d35; }
-      #bookPanel .book-actions { background: #f6f2ef; border-color: #d6dcd1; grid-template-columns: 1fr auto auto; }
+      /* Low-glare dark bookshelf: muted contrast, no pure-white surfaces. */
+      #bookPanel { color-scheme: dark; background: #101413; color: #d5dfda; }
+      #bookPanel .book-actions { background: #171d1b; border-color: #303b36; grid-template-columns: 1fr auto auto; }
       #bookPanel .panel-body { width: 100%; max-width: 680px; margin: 0 auto; }
-      #bookPanel .book-toggle { color: #315c49; }
-      #bookPanel .panel-header { background: #f6f2e9; border-color: #d6dcd1; }
+      #bookPanel .book-toggle { color: #a1b7ab; }
+      #bookPanel .panel-header { background: #151b18; border-color: #303b36; color: #d5dfda; }
       /* Books sits immediately to the left of Shorts. Both pages follow the finger. */
       .viewport, .top-bar, .study-hud, .playback, .empty {
         transition: transform 430ms cubic-bezier(.22, .72, .18, 1);
@@ -1063,33 +1064,33 @@
         .viewport, .top-bar, .study-hud, .playback, .empty, #bookPanel { transition: none !important; }
       }
       #bookPanel .panel-body { touch-action: pan-y; padding-bottom: calc(var(--safe-bottom) + 32px); }
-      #bookPanel .tool { background: #e3eade; color: #263d35; border-color: #bccdbd; }
-      #bookPanel .tool.active { background: #315c49; color: #fff; }
+      #bookPanel .tool { background: #26312c; color: #d5dfda; border-color: #415249; }
+      #bookPanel .tool.active { background: #385449; color: #e9f0eb; border-color: #668778; }
       #bookList { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 26px 14px; padding: 20px 5px; }
-      #bookList .book-cover { position: relative; display: flex; align-items: center; justify-content: center; min-height: 154px; aspect-ratio: 0.72; padding: 25px 13px 20px 20px; margin: 0; border: 0; border-left: 9px solid #0002; border-radius: 4px 12px 12px 4px; color: #fff; background: #426956; box-shadow: 5px 5px 0 #e5dfd1, 7px 8px 0 #beb7a7, 0 14px 14px #46391b18; cursor: pointer; text-align: center; }
-      #bookList .book-cover:nth-child(3n + 2) { background: #785746; }
-      #bookList .book-cover:nth-child(3n) { background: #49657c; }
+      #bookList .book-cover { position: relative; display: flex; align-items: center; justify-content: center; min-height: 154px; aspect-ratio: 0.72; padding: 25px 13px 20px 20px; margin: 0; border: 0; border-left: 9px solid #070b0a; border-radius: 4px 12px 12px 4px; color: #e0e8e3; background: #304c40; box-shadow: 4px 5px 0 #1e2924, 6px 8px 0 #111916, 0 13px 18px #0005; cursor: pointer; text-align: center; }
+      #bookList .book-cover:nth-child(3n + 2) { background: #55453c; }
+      #bookList .book-cover:nth-child(3n) { background: #334a56; }
       #bookList .book-cover::before { content: '📖'; position: absolute; top: 10px; left: 0; right: 0; font-size: 23px; }
       #bookList .book-cover .book-name { font-size: clamp(12px, 3.4vw, 18px); line-height: 1.55; color: inherit; white-space: normal; overflow-wrap: anywhere; padding-top: 15px; font-weight: 700; }
-      #bookList .book-cover.active { outline: 3px solid #a47c25; outline-offset: 5px; }
-      #bookList .book-check { position: absolute; right: 5px; bottom: 6px; background: #fff; color: #315c49; border: 1px solid #bbcbbb; }
-      #bookList .shelf-label { grid-column: 1 / -1; margin: 10px 0 -12px; font-size: 13px; color: #566658; border-bottom: 3px solid #d8c8ac; padding: 0 0 7px; }
-      #bookList .folder { grid-column: 1 / -1; color: #263d35; background: #e3eade; }
-      #bookList .folder .book-name { color: #263d35; }
+      #bookList .book-cover.active { outline: 2px solid #91aa99; outline-offset: 5px; }
+      #bookList .book-check { position: absolute; right: 5px; bottom: 6px; background: #25372f; color: #d5e5d9; border: 1px solid #668777; }
+      #bookList .shelf-label { grid-column: 1 / -1; margin: 10px 0 -12px; font-size: 13px; color: #a7bbaf; border-bottom: 2px solid #35463c; padding: 0 0 7px; }
+      #bookList .folder { grid-column: 1 / -1; color: #d5dfda; background: #202b26; border-color: #394a40; }
+      #bookList .folder .book-name { color: #d5dfda; }
       #bookList .folder .book-check { position: static; }
-      #bookList .book-meta { color: #536153; }
+      #bookList .book-meta { color: #a5b5ac; }
       #bookList.edit-mode { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-      #bookList.edit-mode .book-item { color: #263d35; background: #fffdf8; border: 1px solid #bccdbd; border-radius: 10px; min-height: 60px; padding: 12px; }
+      #bookList.edit-mode .book-item { color: #d5dfda; background: #1c2421; border: 1px solid #394a40; border-radius: 10px; min-height: 60px; padding: 12px; }
       #bookList.edit-mode .book-row { grid-template-columns: 24px minmax(0, 1fr) 28px; }
-      #bookList.edit-mode .book-name { color: #263d35; white-space: normal; overflow-wrap: anywhere; line-height: 1.5; font-size: 16px; }
-      #bookList.edit-mode .folder { background: #e3eade; }
+      #bookList.edit-mode .book-name { color: #d5dfda; white-space: normal; overflow-wrap: anywhere; line-height: 1.5; font-size: 16px; }
+      #bookList.edit-mode .folder { background: #26342c; }
       #bookList.edit-mode .folder-tools { grid-column: 1 / -1; flex-wrap: wrap; justify-content: flex-start; padding-left: 32px; }
-      #bookList.edit-mode .folder-tool { min-height: 40px; padding: 8px 12px; background: #fffdf8; color: #263d35; border: 1px solid #bccdbd; }
-      #bookList.edit-mode .folder-tool.danger { color: #9e2929; }
-      #bookList.edit-mode .book-select { border-color: #708773; color: #315c49; }
-      #bookList.edit-mode .book-select.checked { background: #315c49; color: #fff; }
-      #bookList.edit-mode .active { border: 2px solid #315c49; }
-      #bookList.edit-mode .drop-target { outline: 3px solid #b98725; background: #fff1cb; }
+      #bookList.edit-mode .folder-tool { min-height: 40px; padding: 8px 12px; background: #26312c; color: #d5dfda; border: 1px solid #46594e; }
+      #bookList.edit-mode .folder-tool.danger { color: #db9999; border-color: #755454; }
+      #bookList.edit-mode .book-select { border-color: #667e70; color: #c1d5c8; }
+      #bookList.edit-mode .book-select.checked { background: #395749; color: #e5f0e8; }
+      #bookList.edit-mode .active { border: 2px solid #789788; }
+      #bookList.edit-mode .drop-target { outline: 2px solid #b8a07a; background: #373329; }
       .celebration { color-scheme: light; width: min(88vw, 360px); border: 0; border-radius: 24px; padding: 32px 24px; text-align: center; background: #fff9ed; color: #294d3d; box-shadow: 0 24px 100px #0006; }
       .celebration::backdrop { background: #152e2580; backdrop-filter: blur(5px); }
       .celebration-icon { font-size: 74px; animation: celebrate 650ms ease-out; }
@@ -2816,7 +2817,8 @@
           const againButton = slide.querySelector('.speak-action');
           againButton.disabled = state.againPressedItemIds.has(item.id);
           againButton.setAttribute('aria-label', againButton.disabled ? '本気：このカードは予約済みです' : '本気：もう一度出題する');
-          slide.querySelector('.review-action').classList.toggle('active', item.rank >= 3 || progress.review);
+          // A low rank is shown in the rank badge, not by pre-highlighting 👎.
+          slide.querySelector('.review-action').classList.remove('active');
         });
 
         toggleAnswer?.classList.toggle('active', state.alwaysShowAnswer);
