@@ -64,7 +64,7 @@ function getStudyItems(sheetName) {
   // runs separately after cards are already on screen.
   const syncResult = { folderCount: 0, imageCount: 0, added: 0, removed: 0, errors: [] };
   const lastRow = sheet.getLastRow();
-  const lastColumn = Math.max(sheet.getLastColumn(), 15);
+  const lastColumn = Math.max(sheet.getLastColumn(), 17);
 
   if (lastRow < 1) {
     const stats = updateSheetStats_(sheet);
@@ -128,6 +128,8 @@ function getStudyItems(sheetName) {
         skip: Number(row[2]) || 0,
         studyCount: Number(row[2]) || 0,
         rank: normalizeRank_(row[3]),
+        promotionCount: Math.max(0, Math.floor(Number(row[15]) || 0)),
+        promotionTarget: Math.max(0, Math.floor(Number(row[16]) || 0)),
       };
     })
     .filter((item) => item.question || item.questionImageUrl || item.answerImageUrl);
@@ -256,6 +258,8 @@ function setAllStudyRanks(rank, sheetName) {
   rankRange.setNotes(values.map((row, index) => [isCard[index]
     ? rankNote_(oldNotes[index][0], targetRank)
     : oldNotes[index][0]]));
+  sheet.getRange(1, 16, lastRow, 2).setValues(values.map((row, index) =>
+    isCard[index] ? [0, 0] : ['', '']));
   const stats = updateSheetStats_(sheet);
 
   return { ok: true, count, rank: targetRank, stats };
@@ -693,7 +697,7 @@ function decrementAllStudyCounts(sheetName) {
   return { ok: true, updated };
 }
 
-function updateStudyRank(row, rank, sheetName) {
+function updateStudyRank(row, rank, sheetName, promotionCount, promotionTarget) {
   const targetRow = Number(row);
   const targetRank = normalizeRank_(rank);
 
@@ -704,7 +708,10 @@ function updateStudyRank(row, rank, sheetName) {
   const sheet = getTargetSheet_(sheetName);
   const cell = sheet.getRange(targetRow, 4);
   cell.setValue(gradeFromRank_(targetRank));
-  cell.setNote(rankNote_(cell.getNote(), targetRank));
+  sheet.getRange(targetRow, 16, 1, 2).setValues([[
+    Math.max(0, Math.floor(Number(promotionCount) || 0)),
+    Math.max(0, Math.floor(Number(promotionTarget) || 0)),
+  ]]);
   const stats = updateSheetStats_(sheet);
 
   return { ok: true, row: targetRow, rank: targetRank, stats };
@@ -772,7 +779,7 @@ function addShortcutItem_(params) {
   }
 
   const addedRow = appendAfterLastValueInColumnA_(sheet, [question, answer, '', gradeFromRank_(rank)].concat(comments));
-  sheet.getRange(addedRow, 4).setNote(rankNote_('', rank));
+  sheet.getRange(addedRow, 16, 1, 2).setValues([[0, 0]]);
   const stats = updateSheetStats_(sheet);
 
   return jsonResponse_({
