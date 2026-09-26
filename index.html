@@ -2746,7 +2746,9 @@
         toggleBookEdit.classList.toggle('active', state.bookEditMode);
         addBookFolder.style.display = state.bookEditMode ? 'grid' : 'none';
         if (!state.bookEditMode && state.sheetNames.length) {
-          renderBookshelf(state.bookTreeLayout.children || []);
+          const fragment = document.createDocumentFragment();
+          renderBookshelf(state.bookTreeLayout.children || [], new Set(activeSheetNames()), fragment);
+          bookList.appendChild(fragment);
           return;
         }
 
@@ -4462,37 +4464,38 @@
         return { face, label: `ランク ${face}` };
       }
 
-      function renderBookshelf(nodes) {
+      function renderBookshelf(nodes, selected = new Set(activeSheetNames()), target = bookList) {
         nodes.forEach((node) => {
           if (node.type === 'folder') {
             const heading = document.createElement('h3');
             heading.className = 'shelf-label';
             heading.textContent = node.name;
-            bookList.appendChild(heading);
-            renderBookshelf(node.children || []);
+            target.appendChild(heading);
+            renderBookshelf(node.children || [], selected, target);
             return;
           }
           const book = document.createElement('button');
           book.type = 'button';
           book.className = 'book-cover';
-          book.classList.toggle('active', activeSheetNames().includes(node.sheetName));
+          const isSelected = selected.has(node.sheetName);
+          book.classList.toggle('active', isSelected);
           book.setAttribute('aria-label', `${node.name}で学習`);
           const title = document.createElement('span');
           title.className = 'book-name';
           title.textContent = node.name;
-          const select = bookCheckNode(activeSheetNames().includes(node.sheetName));
+          const select = bookCheckNode(isSelected);
           select.classList.add('book-check');
           select.setAttribute('role', 'checkbox');
           select.setAttribute('tabindex', '0');
           select.setAttribute('aria-label', `${node.name}を選択`);
-          select.setAttribute('aria-checked', String(activeSheetNames().includes(node.sheetName)));
+          select.setAttribute('aria-checked', String(isSelected));
           select.addEventListener('click', (event) => { event.stopPropagation(); toggleSheetSelection(node.sheetName); });
           select.addEventListener('keydown', (event) => {
             if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); toggleSheetSelection(node.sheetName); }
           });
           book.append(title, select);
           book.addEventListener('click', () => selectBook(node.sheetName));
-          bookList.appendChild(book);
+          target.appendChild(book);
         });
       }
 
