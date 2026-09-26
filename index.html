@@ -1206,11 +1206,11 @@
           </button>
           <button class="action tiny-action" type="button" tabindex="0">
             <svg class="reaction-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v11H3V10zM7 10l5-8c2 0 3 1.5 2.5 3.5L14 9h5a2 2 0 0 1 2 2.4l-1.5 8A2 2 0 0 1 17.5 21H7"/></svg>
-            <span class="action-label">+0.1</span>
+            <span class="action-label">ランクUP</span>
           </button>
           <button class="action review-action" type="button" tabindex="0">
             <svg class="reaction-icon bad" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v11H3V10zM7 10l5-8c2 0 3 1.5 2.5 3.5L14 9h5a2 2 0 0 1 2 2.4l-1.5 8A2 2 0 0 1 17.5 21H7"/></svg>
-            <span class="action-label">-0.1</span>
+            <span class="action-label">ランクDOWN</span>
           </button>
           <button class="action comment-action" type="button" tabindex="0">
             <svg class="icon" viewBox="0 0 24 24"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg>
@@ -1382,8 +1382,14 @@
         return Math.min(3, Math.max(1, Number.isFinite(rank) ? Math.round(rank * 10) / 10 : 3));
       }
 
+      const GRADE_ORDER = ['S', 'A', 'B', 'C', 'D', 'E'];
       function formatRank(value) {
-        return normalizeRank(value).toFixed(1);
+        return rankMood(value).face;
+      }
+      function adjacentGrade(value, direction) {
+        const current = GRADE_ORDER.indexOf(rankMood(value).face);
+        const next = Math.max(0, Math.min(GRADE_ORDER.length - 1, current + direction));
+        return GRADE_ORDER[next];
       }
 
       function rankLabel(value) {
@@ -3170,9 +3176,10 @@
         const source = sourceItemFor(item);
         flashAction('tiny-action', 'feedback-got');
         const alreadyBest = source.rank <= 1;
-        const nextRank = Math.max(1, source.rank - 0.1);
-        setRank(item, nextRank, alreadyBest ? '習得済みです' : rankMood(nextRank).label);
-        if (fromGesture && (alreadyBest || nextRank > 1)) showDoubleEffect(alreadyBest ? '習得済み' : '+0.1');
+        const nextGrade = adjacentGrade(source.rank, -1);
+        const nextRank = normalizeRank(nextGrade);
+        setRank(item, nextGrade, alreadyBest ? '習得済みです' : `ランク ${nextGrade}`);
+        if (fromGesture && (alreadyBest || nextRank > 1)) showDoubleEffect(alreadyBest ? '習得済み' : `ランク ${nextGrade}`);
       }
 
       function lowerRank(fromGesture = false) {
@@ -3181,9 +3188,9 @@
         const source = sourceItemFor(item);
         flashAction('review-action', 'feedback-hard');
         const alreadyHardest = source.rank >= 3;
-        const nextRank = Math.min(3, Math.round((source.rank + 0.1) * 10) / 10);
-        setRank(item, nextRank, alreadyHardest ? '苦手として登録済みです' : rankMood(nextRank).label);
-        if (fromGesture) showDoubleEffect(alreadyHardest ? '繰り返し練習しよう' : '-0.1');
+        const nextGrade = adjacentGrade(source.rank, 1);
+        setRank(item, nextGrade, alreadyHardest ? '苦手として登録済みです' : `ランク ${nextGrade}`);
+        if (fromGesture) showDoubleEffect(alreadyHardest ? '繰り返し練習しよう' : `ランク ${nextGrade}`);
       }
 
       function scheduleRepeats(manual = false) {
