@@ -3323,7 +3323,7 @@
         }
       }
 
-      function persistRank(item) {
+      function persistRank(item, gradeChanged = true) {
         const source = sourceItemFor(item);
         if (!source || !source.row || !window.google || !google.script || !google.script.run) return;
         google.script.run
@@ -3334,7 +3334,7 @@
             }
           })
           .updateStudyRank(source.row, source.rank, sheetNameForItem(source),
-            source.promotionCount || 0, source.promotionTarget || 0);
+            source.promotionCount || 0, source.promotionTarget || 0, gradeChanged);
       }
 
       function recordSkipIfUntouched(item) {
@@ -3376,7 +3376,7 @@
         saveProgress();
         persistRank(source);
         updateSlides();
-        renderMastery();
+        if (masteryPanel.classList.contains('visible')) renderMastery();
         if (message) showToast(message);
         if (source.rank <= 1) {
           state.pendingRemovalIds.add(source.id);
@@ -3440,7 +3440,7 @@
         saved.promotionTarget = progress.target;
         saveProgress();
         if (progress.count < progress.target) {
-          persistRank(source);
+          persistRank(source, false);
           updateSlides();
           showToast(`👍 ${progress.count}/${progress.target}・あと${progress.target - progress.count}回で昇格`);
           if (fromGesture) showDoubleEffect(`${progress.count}/${progress.target}`);
@@ -3460,7 +3460,7 @@
         const nextGrade = adjacentGrade(source.rank, 1);
         resetPromotionProgress(source);
         setRank(item, nextGrade, alreadyHardest ? 'Eランクで再練習' : `ランク ${nextGrade}`);
-        if (alreadyHardest) persistRank(source);
+        if (alreadyHardest) persistRank(source, false);
         if (fromGesture) showDoubleEffect(alreadyHardest ? '繰り返し練習しよう' : `ランク ${nextGrade}`);
       }
 
@@ -4002,7 +4002,7 @@
         if (now - state.lastTapAt < 280) {
           state.lastTapAt = 0;
           window.clearTimeout(state.singleTapTimer);
-          improveRank(true);
+          improveRankTiny(true);
           return;
         }
 
