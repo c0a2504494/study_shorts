@@ -1503,7 +1503,7 @@
 
       const STORAGE_KEY = 'study-shorts-vocab-v3';
       const UI_PREFS_KEY = 'study-shorts-ui-prefs-v1';
-      const INITIAL_LOADING_MS = 3000;
+      // Loading ends as soon as cards are available, without a fixed delay.
       const GRADE_RANKS = Object.freeze({ S: 1, A: 1.1, B: 1.5, C: 2, D: 2.5, E: 3 });
       const state = {
         sourceItems: [],
@@ -1527,6 +1527,9 @@
         deckStats: [],
         imagePreloadCache: new Map(),
         preloadQueueTimer: 0,
+        loadRequestId: 0,
+        syncedImageSheets: new Set(),
+        sourceItemMap: new Map(),
         sheetNames: [],
         currentSheet: '',
         selectedSheetNames: [],
@@ -1859,7 +1862,6 @@
         state.initialLoadingComplete = true;
       }
 
-      state.initialLoadingTimer = window.setTimeout(hideLoading, INITIAL_LOADING_MS);
       loadUiPreferences();
 
       function showDoubleEffect(text) {
@@ -1897,8 +1899,7 @@
       }
 
       function sourceItemFor(item) {
-        const key = baseItemId(item);
-        return state.sourceItems.find((candidate) => candidate.id === key) || item;
+        return state.sourceItemMap.get(baseItemId(item)) || item;
       }
 
       function sheetNameForItem(item) {
@@ -1934,8 +1935,8 @@
         if (state.items.length === 0) return;
 
         const urls = [];
-        const start = Math.max(0, center - 4);
-        const end = Math.min(state.items.length - 1, center + 8);
+        const start = Math.max(0, center - 1);
+        const end = Math.min(state.items.length - 1, center + 2);
         for (let position = start; position <= end; position += 1) {
           const item = sourceItemFor(state.items[position]);
           if (!item) continue;
@@ -1949,7 +1950,7 @@
         window.clearTimeout(state.preloadQueueTimer);
         state.preloadQueueTimer = window.setTimeout(() => {
           urls.filter(Boolean).forEach(preloadImageUrl);
-        }, 20);
+        }, 120);
       }
 
       function repeatCopy(item, offset) {
@@ -2032,10 +2033,7 @@
         state.sourceItems = (payload.items || [])
           .map((item, index) => parseItem(item, `row-${index + 1}`))
           .filter((item) => item.word);
-        preloadBackgrounds(uniqueHttpUrls([
-          ...state.backgroundUrls,
-          ...state.sourceItems.map((item) => item.backgroundUrl),
-        ]));
+        state.sourceItemMap = new Map(state.sourceItems.map((item) => [item.id, item]));
         rebuildDeck();
         recordDailyLoginOnce();
         if (state.backgroundUrls.length > 0) {
@@ -2081,7 +2079,7 @@
       }
 
       function preloadBackgrounds(urls) {
-        urls.slice(0, 12).forEach((url) => {
+        urls.slice(0, 2).forEach((url) => {
           const image = new Image();
           image.decoding = 'async';
           image.onload = () => {
@@ -2739,7 +2737,8 @@
           applyTextScale(answerText, answer);
           if (questionImageUrl) {
             studyImage.referrerPolicy = 'no-referrer';
-            studyImage.src = questionImageUrl;
+            studyImage.loading = Number(slide.dataset.position) === state.index ? 'eager' : 'lazy';
+            if (studyImage.getAttribute('src') !== questionImageUrl) studyImage.src = questionImageUrl;
             studyImage.onerror = () => slide.classList.remove('has-question-image');
             slide.classList.remove('has-photo');
             slide.style.removeProperty('--card-bg-image');
@@ -2751,7 +2750,8 @@
           }
           if (answerImageUrl) {
             answerImage.referrerPolicy = 'no-referrer';
-            answerImage.src = answerImageUrl;
+            answerImage.loading = isRevealed ? 'eager' : 'lazy';
+            if (answerImage.getAttribute('src') !== answerImageUrl) answerImage.src = answerImageUrl;
             answerImage.onerror = () => slide.classList.remove('has-answer-image');
           } else {
             answerImage.removeAttribute('src');
@@ -3060,6 +3060,7 @@
         if (!source) return;
         const sourceSheetName = sheetNameForItem(source);
         state.sourceItems = state.sourceItems.filter((item) => item.id !== source.id);
+        state.sourceItemMap.delete(source.id);
         state.items = state.items.filter((item) => baseItemId(item) !== source.id);
         state.deckStats.forEach((deck) => {
           if (deck.sheetName !== sourceSheetName) return;
@@ -3995,7 +3996,26 @@
         setBackgroundProbabilityFromInput(0);
       });
 
-      function loadItems(sheetName = state.currentSheet) {
+      function syncImagesAfterRender(sheetNames, requestId) {
+        if (!window.google?.script?.run || !sheetNames.length) return;
+        const unsynced = sheetNames.filter((name) => !state.syncedImageSheets.has(name));
+        if (!unsynced.length) return;
+        unsynced.forEach((name) => state.syncedImageSheets.add(name));
+        // Drive reconciliation is not on the critical path for first paint.
+        google.script.run
+          .withSuccessHandler((result) => {
+            if (requestId !== state.loadRequestId) return;
+            if (Number(result?.added || 0) + Number(result?.removed || 0) > 0) {
+              loadItems(sheetNames, { skipSync: true });
+            }
+          })
+          .withFailureHandler(() => {
+            unsynced.forEach((name) => state.syncedImageSheets.delete(name));
+          })
+          .syncStudyImagesForSheets(unsynced);
+      }
+
+      function loadItems(sheetName = state.currentSheet, options = {}) {
         const sheetNames = Array.isArray(sheetName)
           ? sheetName.filter(Boolean)
           : [sheetName || state.currentSheet].filter(Boolean);
@@ -4003,6 +4023,7 @@
           state.currentSheet = sheetNames[0];
           state.selectedSheetNames = sheetNames;
         }
+        const requestId = ++state.loadRequestId;
         showLoading('読み込み中');
         if (!window.google || !google.script || !google.script.run) {
           state.sheetNames = ['Demo/Basic', 'Demo/TOEIC'];
@@ -4019,10 +4040,14 @@
           showToast('デモモード');
           return;
         }
-
         google.script.run
-          .withSuccessHandler(render)
+          .withSuccessHandler((payload) => {
+            if (requestId !== state.loadRequestId) return;
+            render(payload);
+            if (!options.skipSync) syncImagesAfterRender(sheetNames, requestId);
+          })
           .withFailureHandler(() => {
+            if (requestId !== state.loadRequestId) return;
             hideLoading();
             empty.classList.add('visible');
             empty.querySelector('p').textContent = 'カードを読み込めませんでした。';
@@ -4035,25 +4060,31 @@
           loadItems('Demo/Basic');
           return;
         }
-
+        // Independent metadata calls are parallel instead of sequential.
+        let namesReady = false;
+        let layoutReady = false;
+        let loaded = false;
+        let names = [];
+        let layout = null;
+        const startWhenReady = () => {
+          if (loaded || !namesReady || !layoutReady) return;
+          loaded = true;
+          state.sheetNames = names;
+          state.currentSheet = state.currentSheet || names[0] || '';
+          state.selectedSheetNames = state.currentSheet ? [state.currentSheet] : [];
+          state.bookTreeLayout = layout
+            ? normalizeBookTreeLayout(layout)
+            : fallbackBookTreeLayout(names);
+          loadItems(state.currentSheet);
+        };
         google.script.run
-          .withSuccessHandler((names) => {
-            state.sheetNames = names || [];
-            state.currentSheet = state.currentSheet || state.sheetNames[0] || '';
-            state.selectedSheetNames = state.currentSheet ? [state.currentSheet] : [];
-            google.script.run
-              .withSuccessHandler((layout) => {
-                state.bookTreeLayout = normalizeBookTreeLayout(layout);
-                loadItems(state.currentSheet);
-              })
-              .withFailureHandler(() => {
-                state.bookTreeLayout = fallbackBookTreeLayout(state.sheetNames);
-                loadItems(state.currentSheet);
-              })
-              .getBookTreeLayout();
-          })
-          .withFailureHandler(() => loadItems())
+          .withSuccessHandler((result) => { names = result || []; namesReady = true; startWhenReady(); })
+          .withFailureHandler(() => { namesReady = true; startWhenReady(); })
           .getSheetNames();
+        google.script.run
+          .withSuccessHandler((result) => { layout = result; layoutReady = true; startWhenReady(); })
+          .withFailureHandler(() => { layoutReady = true; startWhenReady(); })
+          .getBookTreeLayout();
       }
 
       function spinRoulette() {
