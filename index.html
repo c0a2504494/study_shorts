@@ -1038,6 +1038,8 @@
       .reaction-icon { width: 32px; height: 32px; fill: none; stroke: #fff; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
       .reaction-icon.bad { transform: rotate(180deg); }
       .action.tiny-action, .action.review-action { background: transparent; border: 0; box-shadow: none; }
+      /* Keep the promotion counter in the data, but show icons only. */
+      .tiny-action .action-label, .review-action .action-label { display: none; }
       .review-stat { min-width: 42px; font-size: 20px; font-weight: 800; text-align: center; border-radius: 8px; padding: 4px 10px; background: transparent; color: #fff; }
       .study-hud { position: fixed; top: calc(var(--safe-top) + 17px); left: calc(var(--safe-left) + 56px); right: calc(var(--safe-right) + 58px); z-index: 11; display: flex; align-items: center; gap: 10px; min-width: 0; pointer-events: none; }
       .study-clock { display: inline-flex; align-items: center; flex: 0 0 auto; gap: 6px; font-variant-numeric: tabular-nums; font-weight: 700; text-shadow: 0 1px 6px #000; white-space: nowrap; }
@@ -1070,6 +1072,9 @@
       #bookPanel .panel-body { width: 100%; max-width: 680px; margin: 0 auto; }
       #bookPanel .book-toggle { color: #a1b7ab; }
       #bookPanel .panel-header { background: #151b18; border-color: #303b36; color: #d5dfda; }
+      #bookPanel .panel-header { justify-content: flex-start; gap: 12px; }
+      #bookPanel #bookClose { order: -1; flex: 0 0 34px; }
+      #bookPanel #bookTitle { min-width: 0; }
       /* Books sits immediately to the left of Shorts. Both pages follow the finger. */
       .viewport, .top-bar, .study-hud, .playback, .empty {
         transition: transform 430ms cubic-bezier(.22, .72, .18, 1);
@@ -1299,11 +1304,11 @@
             <svg class="icon" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
             <span class="action-label">習得済み</span>
           </button>
-          <button class="action tiny-action" type="button" tabindex="0">
+          <button class="action tiny-action" type="button" tabindex="0" aria-label="グッド：ランクアップ進捗を増やす" title="グッド">
             <svg class="reaction-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v11H3V10zM7 10l5-8c2 0 3 1.5 2.5 3.5L14 9h5a2 2 0 0 1 2 2.4l-1.5 8A2 2 0 0 1 17.5 21H7"/></svg>
             <span class="action-label">ランクUP</span>
           </button>
-          <button class="action review-action" type="button" tabindex="0">
+          <button class="action review-action" type="button" tabindex="0" aria-label="バッド：ランクを1段階下げる" title="バッド">
             <svg class="reaction-icon bad" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v11H3V10zM7 10l5-8c2 0 3 1.5 2.5 3.5L14 9h5a2 2 0 0 1 2 2.4l-1.5 8A2 2 0 0 1 17.5 21H7"/></svg>
             <span class="action-label">ランクDOWN</span>
           </button>
