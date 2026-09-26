@@ -1290,33 +1290,76 @@
       const loadingScreen = document.getElementById('loadingScreen');
       const toast = document.getElementById('toast');
       const drawer = document.getElementById('drawer');
-      // Dismiss settings on a deliberate vertical scroll, even while its entrance
-      // animation is still running. Its existing CSS transition handles the exit.
-      let settingsTouchStart = null;
-      const dismissSettingsOnScroll = () => {
-        if (!drawer.classList.contains('visible')) return;
-        drawer.classList.remove('visible');
-        scheduleAuto();
-      };
+      // Let a scroll close Settings during its entrance animation. If the
+      // gesture starts on Settings, also complete that same swipe on Shorts:
+      // touch events cannot retarget to the uncovered card mid-gesture.
+      let settingsScrollGesture = null;
+      function dismissSettingsOnScroll() {
+        if (!drawer.classList.contains('visible')) return false;
+        drawer.classList.remove('visible'); // CSS eases out from its current position.
+        window.clearTimeout(state.autoTimer);
+        return true;
+      }
       document.addEventListener('touchstart', (event) => {
-        settingsTouchStart = event.touches.length === 1
-          ? { x: event.touches[0].clientX, y: event.touches[0].clientY }
+        settingsScrollGesture = event.touches.length === 1 && drawer.classList.contains('visible')
+          ? {
+              x: event.touches[0].clientX,
+              y: event.touches[0].clientY,
+              fromDrawer: drawer.contains(event.target),
+              dismissed: false,
+            }
           : null;
       }, { capture: true, passive: true });
       document.addEventListener('touchmove', (event) => {
-        if (!settingsTouchStart || event.touches.length !== 1 || !drawer.classList.contains('visible')) return;
-        const dx = event.touches[0].clientX - settingsTouchStart.x;
-        const dy = event.touches[0].clientY - settingsTouchStart.y;
-        if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx) * 1.2) {
-          settingsTouchStart = null;
-          dismissSettingsOnScroll();
+        const gesture = settingsScrollGesture;
+        if (!gesture || event.touches.length !== 1) return;
+        const dx = event.touches[0].clientX - gesture.x;
+        const dy = event.touches[0].clientY - gesture.y;
+        if (!gesture.dismissed && Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx) * 1.2) {
+          gesture.dismissed = dismissSettingsOnScroll();
+          if (gesture.dismissed && gesture.fromDrawer) event.preventDefault();
+        } else if (gesture.dismissed && gesture.fromDrawer) {
+          event.preventDefault();
         }
+      }, { capture: true, passive: false });
+      document.addEventListener('touchend', (event) => {
+        const gesture = settingsScrollGesture;
+        settingsScrollGesture = null;
+        if (!gesture?.dismissed || !gesture.fromDrawer || event.changedTouches.length !== 1) return;
+        const dx = event.changedTouches[0].clientX - gesture.x;
+        const dy = event.changedTouches[0].clientY - gesture.y;
+        event.preventDefault();
+        event.stopPropagation(); // Never activate a Settings button after the swipe.
+        blockNextTap();
+        if (Math.abs(dy) > Math.min(80, window.innerHeight * .11) && Math.abs(dy) > Math.abs(dx) * 1.2) {
+          dy < 0 ? loopForward() : loopBackward();
+        } else {
+          scheduleAuto();
+        }
+      }, { capture: true, passive: false });
+      document.addEventListener('touchcancel', () => {
+        if (settingsScrollGesture?.dismissed) scheduleAuto();
+        settingsScrollGesture = null;
       }, { capture: true, passive: true });
-      document.addEventListener('touchend', () => { settingsTouchStart = null; }, { capture: true, passive: true });
-      document.addEventListener('touchcancel', () => { settingsTouchStart = null; }, { capture: true, passive: true });
       document.addEventListener('wheel', (event) => {
-        if (Math.abs(event.deltaY) >= 8) dismissSettingsOnScroll();
-      }, { capture: true, passive: true });
+        if (!drawer.classList.contains('visible') || Math.abs(event.deltaY) < 8) return;
+        const fromDrawer = drawer.contains(event.target);
+        dismissSettingsOnScroll();
+        if (!fromDrawer) return; // Underlying viewport handles its own wheel event.
+        event.preventDefault();
+        event.stopPropagation();
+        if (state.rouletteRunning || state.settleCallback || Math.abs(event.deltaY) < 18) {
+          scheduleAuto();
+          return;
+        }
+        const now = Date.now();
+        if (now - state.lastWheelAt < 560) {
+          scheduleAuto();
+          return;
+        }
+        state.lastWheelAt = now;
+        event.deltaY > 0 ? loopForward() : loopBackward();
+      }, { capture: true, passive: false });
       const commentsPanel = document.getElementById('commentsPanel');
       const commentsTitle = document.getElementById('commentsTitle');
       const commentList = document.getElementById('commentList');
