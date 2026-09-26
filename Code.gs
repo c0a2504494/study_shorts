@@ -52,7 +52,9 @@ function authorizeDriveAccess() {
 function getStudyItems(sheetName) {
   const sheet = getTargetSheet_(sheetName);
   const resolvedSheetName = sheet.getName();
-  const syncResult = syncDriveFolderImagesToSheet_(sheet);
+  // Keep the first card fetch read-only and fast. Drive folder reconciliation
+  // runs separately after cards are already on screen.
+  const syncResult = { folderCount: 0, imageCount: 0, added: 0, removed: 0, errors: [] };
   ensureLetterRanks_(sheet);
   const lastRow = sheet.getLastRow();
   const lastColumn = Math.max(sheet.getLastColumn(), 15);
@@ -92,7 +94,6 @@ function getStudyItems(sheetName) {
   const answerDriveUrls = getAnswerDriveUrls_(sheet, lastRow);
   const backgroundUrls = getBackgroundUrls_(sheet, lastRow);
   const rowBackgroundUrls = getRowBackgroundUrls_(sheet, lastRow);
-  const rankNotes = sheet.getRange(1, 4, lastRow, 1).getNotes();
   const rawBackgroundProbability = String(values[1]?.[9] ?? '').trim();
   const backgroundProbability = rawBackgroundProbability === '0' ? 0 : 1;
   const rawMasteredProbability = String(values[1] && values[1][14] || '').trim();
@@ -118,7 +119,7 @@ function getStudyItems(sheetName) {
         comments: row.slice(4, 7).map((comment) => comment.trim()).filter(Boolean),
         skip: Number(row[2]) || 0,
         studyCount: Number(row[2]) || 0,
-        rank: normalizeRank_(row[3], rankNotes[index][0]),
+        rank: normalizeRank_(row[3]),
       };
     })
     .filter((item) => item.question || item.questionImageUrl || item.answerImageUrl);
@@ -993,18 +994,16 @@ function ensureStatsLabels_(sheet) {
 }
 
 function updateSheetStats_(sheet) {
-  ensureStatsLabels_(sheet);
   const lastRow = sheet.getLastRow();
   let sum = 0;
   let count = 0;
 
   if (lastRow >= 1) {
     const values = sheet.getRange(1, 1, lastRow, 4).getDisplayValues();
-    const rankNotes = sheet.getRange(1, 4, lastRow, 1).getNotes();
     values.forEach((row, index) => {
       const hasCardContent = String(row[0] || row[1] || '').trim();
       if (hasCardContent) {
-        sum += normalizeRank_(row[3], rankNotes[index][0]);
+        sum += normalizeRank_(row[3]);
         count += 1;
       }
     });
@@ -1088,18 +1087,31 @@ function rankNote_(oldNote, rank) {
 function ensureLetterRanks_(sheet) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 1) return;
-  const values = sheet.getRange(1, 1, lastRow, 4).getDisplayValues();
-  const rankRange = sheet.getRange(1, 4, lastRow, 1);
-  const notes = rankRange.getNotes();
+  const range = sheet.getRange(1, 1, lastRow, 4);
+  const values = range.getDisplayValues();
+  const fixes = [];
   values.forEach((row, index) => {
     if (!String(row[0] || row[1] || '').trim()) return;
     const existing = String(row[3] || '').trim().toUpperCase();
     if (Object.prototype.hasOwnProperty.call(RANK_GRADE_VALUES_, existing)) return;
-    const numeric = normalizeRank_(row[3]);
-    const cell = sheet.getRange(index + 1, 4);
-    cell.setValue(gradeFromRank_(numeric));
-    cell.setNote(rankNote_(notes[index][0], numeric));
+    fixes.push({ row: index + 1, grade: gradeFromRank_(row[3]) });
   });
+  // Once migrated, reads perform no writes. Avoid a note read/write per card.
+  fixes.forEach((fix) => sheet.getRange(fix.row, 4).setValue(fix.grade));
+}
+
+function syncStudyImagesForSheets(sheetNames) {
+  const names = normalizeSheetNameList_(sheetNames);
+  const targets = names.length ? names : [getTargetSheet_().getName()];
+  const results = targets.map((name) => {
+    const result = syncDriveFolderImagesToSheet_(getTargetSheet_(name));
+    return Object.assign({ sheetName: name }, result);
+  });
+  return {
+    added: results.reduce((sum, result) => sum + Number(result.added || 0), 0),
+    removed: results.reduce((sum, result) => sum + Number(result.removed || 0), 0),
+    results,
+  };
 }
 
 function syncDriveFolderImagesToSheet_(sheet) {
@@ -1139,17 +1151,15 @@ function syncDriveFolderImagesToSheet_(sheet) {
           (existingNameRow && existing.driveRows[existingNameRow] ? existingNameRow : 0);
 
         if (existingRow) {
-          if (existing.driveRows[existingRow]) {
-            setLinkedCell_(sheet.getRange(existingRow, 1), name, imageUrl);
-            setLinkedCell_(sheet.getRange(existingRow, 2), name, imageUrl);
-          }
+          // Existing links are already synced. Rewriting every rich-text cell
+          // on every read was a major source of Drive/Sheets latency.
           existing.byFileId[fileId] = existingRow;
           existing.byName[name] = existingRow;
           continue;
         }
 
         const row = sheet.getLastRow() + 1;
-        sheet.getRange(row, 1, 1, 4).setValues([[name, name, '', 3]]);
+        sheet.getRange(row, 1, 1, 4).setValues([[name, name, '', 'E']]);
         setLinkedCell_(sheet.getRange(row, 1), name, imageUrl);
         setLinkedCell_(sheet.getRange(row, 2), name, imageUrl);
         existing.byFileId[fileId] = row;
