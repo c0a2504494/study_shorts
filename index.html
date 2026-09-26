@@ -1652,6 +1652,8 @@
             comments: Array.isArray(raw.comments) ? raw.comments.filter(Boolean) : [],
             studyCount,
             rank: normalizeRank(raw.rank),
+            promotionCount: Math.max(0, Math.floor(Number(raw.promotionCount) || 0)),
+            promotionTarget: Math.max(0, Math.floor(Number(raw.promotionTarget) || 0)),
             questionImageUrl,
             answerImageUrl,
             questionDriveUrl: String(raw.questionDriveUrl || '').trim(),
@@ -1740,6 +1742,38 @@
           state.progress[key] = { known: item.rank <= 1, review: item.rank >= 3, seen: 0, miss: 0 };
         }
         return state.progress[key];
+      }
+      const PROMOTION_STEPS = Object.freeze({
+        E: [1, 3], D: [3, 5], C: [3, 7], B: [5, 9], A: [5, 9],
+      });
+      function promotionProgress(item) {
+        const source = sourceItemFor(item);
+        if (!source) return { count: 0, target: 0 };
+        const grade = rankMood(source.rank).face;
+        const range = PROMOTION_STEPS[grade];
+        if (!range) return { count: 0, target: 0 };
+        const progress = getProgress(source);
+        // Sheets P/Q hold shared progress; local storage covers demo/offline use.
+        const count = Math.max(0, Math.floor(Number(source.promotionCount ?? progress.promotionCount) || 0));
+        let target = Math.floor(Number(source.promotionTarget ?? progress.promotionTarget) || 0);
+        if (target < range[0] || target > range[1]) {
+          target = range[0] + Math.floor(Math.random() * (range[1] - range[0] + 1));
+        }
+        source.promotionCount = count;
+        source.promotionTarget = target;
+        progress.promotionCount = count;
+        progress.promotionTarget = target;
+        return { count, target };
+      }
+      function resetPromotionProgress(item) {
+        const source = sourceItemFor(item);
+        if (!source) return;
+        const progress = getProgress(source);
+        source.promotionCount = 0;
+        source.promotionTarget = 0;
+        progress.promotionCount = 0;
+        progress.promotionTarget = 0;
+        saveProgress();
       }
 
       function shuffle(values) {
@@ -2769,6 +2803,9 @@
           slide.querySelector('.known-action').disabled = false;
           slide.querySelector('.tiny-action').disabled = false;
           slide.querySelector('.review-action').disabled = false;
+          const promotion = promotionProgress(item);
+          slide.querySelector('.tiny-action .action-label').textContent =
+            promotion.target ? `👍 ${promotion.count}/${promotion.target}` : 'Sランク';
           const againButton = slide.querySelector('.speak-action');
           againButton.disabled = state.againPressedItemIds.has(item.id);
           againButton.setAttribute('aria-label', againButton.disabled ? '本気：このカードは予約済みです' : '本気：もう一度出題する');
@@ -3289,7 +3326,8 @@
               updateStatsDisplay();
             }
           })
-          .updateStudyRank(source.row, source.rank, sheetNameForItem(source));
+          .updateStudyRank(source.row, source.rank, sheetNameForItem(source),
+            source.promotionCount || 0, source.promotionTarget || 0);
       }
 
       function recordSkipIfUntouched(item) {
@@ -3324,6 +3362,7 @@
         state.lastRankChange = `${formatRank(previousRank)} -> ${formatRank(source.rank)}`;
         state.lastRankChangeItemId = item.id;
         const progress = getProgress(source);
+        if (source.rank !== previousRank) resetPromotionProgress(source);
         progress.known = source.rank <= 1;
         progress.review = source.rank >= 3;
         if (source.rank >= 3) progress.miss += 1;
@@ -3382,11 +3421,27 @@
         if (!item) return;
         const source = sourceItemFor(item);
         flashAction('tiny-action', 'feedback-got');
-        const alreadyBest = source.rank <= 1;
+        if (source.rank <= 1) {
+          showToast('すでにSランクです');
+          return;
+        }
+        const progress = promotionProgress(source);
+        progress.count += 1;
+        source.promotionCount = progress.count;
+        const saved = getProgress(source);
+        saved.promotionCount = progress.count;
+        saved.promotionTarget = progress.target;
+        saveProgress();
+        if (progress.count < progress.target) {
+          persistRank(source);
+          updateSlides();
+          showToast(`👍 ${progress.count}/${progress.target}・あと${progress.target - progress.count}回で昇格`);
+          if (fromGesture) showDoubleEffect(`${progress.count}/${progress.target}`);
+          return;
+        }
         const nextGrade = adjacentGrade(source.rank, -1);
-        const nextRank = normalizeRank(nextGrade);
-        setRank(item, nextGrade, alreadyBest ? '習得済みです' : `ランク ${nextGrade}`);
-        if (fromGesture && (alreadyBest || nextRank > 1)) showDoubleEffect(alreadyBest ? '習得済み' : `ランク ${nextGrade}`);
+        setRank(item, nextGrade, `ランク ${nextGrade} に昇格！`);
+        if (fromGesture && nextGrade !== 'S') showDoubleEffect(`ランク ${nextGrade}`);
       }
 
       function lowerRank(fromGesture = false) {
@@ -3396,7 +3451,9 @@
         flashAction('review-action', 'feedback-hard');
         const alreadyHardest = source.rank >= 3;
         const nextGrade = adjacentGrade(source.rank, 1);
-        setRank(item, nextGrade, alreadyHardest ? '苦手として登録済みです' : `ランク ${nextGrade}`);
+        resetPromotionProgress(source);
+        setRank(item, nextGrade, alreadyHardest ? 'Eランクで再練習' : `ランク ${nextGrade}`);
+        if (alreadyHardest) persistRank(source);
         if (fromGesture) showDoubleEffect(alreadyHardest ? '繰り返し練習しよう' : `ランク ${nextGrade}`);
       }
 
@@ -3714,7 +3771,10 @@
         const sheets = activeSheetNames();
         if (!window.confirm(`選択中の${sheets.length}冊の習得度をすべて${rank}に変更しますか？`)) return;
         const numericRank = normalizeRank(rank);
-        state.sourceItems.forEach((item) => item.rank = numericRank);
+        state.sourceItems.forEach((item) => {
+          item.rank = numericRank;
+          resetPromotionProgress(item);
+        });
         state.deckStats.forEach((deck) => {
           const sheetItems = state.sourceItems.filter((item) => sheetNameForItem(item) === deck.sheetName);
           deck.cardCount = sheetItems.length;
