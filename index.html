@@ -1286,6 +1286,7 @@
         bookshelfGesture = null;
         if (returnToShorts && bookPanel.classList.contains('visible')) {
           bookPanel.dataset.ignoreClick = 'true';
+          window.setTimeout(() => { delete bookPanel.dataset.ignoreClick; }, 400);
           closeAllPanels();
         }
       }, { passive: true });
