@@ -3917,17 +3917,6 @@
         table.appendChild(tbody);
         masteryList.appendChild(table);
 
-        masteryList.appendChild(sectionTitleNode('ランクアップ条件（👍回数）'));
-        const requirements = document.createElement('div');
-        requirements.className = 'deck-stat-list';
-        [['E → D', '1〜3'], ['D → C', '3〜5'], ['C → B', '3〜7'], ['B → A', '5〜9'], ['A → S', '5〜9']]
-          .forEach(([name, range]) => {
-            const row = document.createElement('div');
-            row.className = 'deck-stat-row';
-            row.textContent = `${name}：${range}回（カードごとに抽選）`;
-            requirements.appendChild(row);
-          });
-        masteryList.appendChild(requirements);
 
         if (summary.sheetStats.length > 1) {
           masteryList.appendChild(sectionTitleNode('本ごとの学習記録'));
